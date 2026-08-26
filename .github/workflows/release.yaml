@@ -69,6 +69,6 @@ jobs:
       - name: "Linear release: ${{ matrix.feature.name }}"
         uses: linear/linear-release-action@v0
         with:
-          api_key: ${{ secrets[format('LINEAR_KEY_{0}', matrix.feature.secret)] }}
+          access_key: ${{ secrets[format('LINEAR_KEY_{0}', matrix.feature.secret)] }}
           include_paths: ${{ matrix.feature.path }}
           dry_run: ${{ github.ref != 'refs/heads/main' }}
