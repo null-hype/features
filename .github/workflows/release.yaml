@@ -45,3 +45,30 @@ jobs:
               git push origin "$branch"
               gh pr create --title "$message" --body "$message"
           fi
+
+  linear-release:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        feature:
+          - name: color
+            path: src/color/**
+            secret: COLOR
+          - name: hello
+            path: src/hello/**
+            secret: HELLO
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Linear release: ${{ matrix.feature.name }}"
+        uses: linear/linear-release-action@v0
+        with:
+          api_key: ${{ secrets[format('LINEAR_KEY_{0}', matrix.feature.secret)] }}
+          include_paths: ${{ matrix.feature.path }}
+          dry_run: ${{ github.ref != 'refs/heads/main' }}
