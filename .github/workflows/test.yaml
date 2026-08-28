@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         features:
-          - color
+          - pass-cli
           - hello
         baseImage:
           - debian:latest
@@ -34,7 +34,7 @@ jobs:
     strategy:
       matrix:
         features:
-          - color
+          - pass-cli
           - hello
     steps:
       - uses: actions/checkout@v4

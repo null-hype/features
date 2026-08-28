@@ -55,8 +55,8 @@ jobs:
       fail-fast: false
       matrix:
         feature:
-          - name: color
-            path: src/color/**
+          - name: pass-cli
+            path: src/pass-cli/**
             secret: COLOR
           - name: hello
             path: src/hello/**
