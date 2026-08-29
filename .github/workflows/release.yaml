@@ -58,9 +58,9 @@ jobs:
           - name: pass-cli
             path: src/pass-cli/**
             secret: COLOR
-          - name: hello
-            path: src/hello/**
-            secret: HELLO
+          - name: playwright-cli
+            path: src/playwright-cli/**
+            secret: PLAYWRIGHT_CLI
     steps:
       - uses: actions/checkout@v4
         with:

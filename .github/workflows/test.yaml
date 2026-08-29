@@ -14,7 +14,7 @@ jobs:
       matrix:
         features:
           - pass-cli
-          - hello
+          - playwright-cli
         baseImage:
           - debian:latest
           - ubuntu:latest
@@ -35,7 +35,7 @@ jobs:
       matrix:
         features:
           - pass-cli
-          - hello
+          - playwright-cli
     steps:
       - uses: actions/checkout@v4
 
