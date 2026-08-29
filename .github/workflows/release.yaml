@@ -53,6 +53,10 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      # `secret` names the GitHub secret (LINEAR_KEY_<secret>) for this
+      # feature's Linear pipeline. It's independent of `name` - renaming a
+      # feature doesn't rename its GitHub secret, so this keeps the value
+      # from before the feature was renamed (color->pass-cli, hello->playwright-cli).
       matrix:
         feature:
           - name: pass-cli
@@ -60,7 +64,7 @@ jobs:
             secret: COLOR
           - name: playwright-cli
             path: src/playwright-cli/**
-            secret: PLAYWRIGHT_CLI
+            secret: HELLO
     steps:
       - uses: actions/checkout@v4
         with:
