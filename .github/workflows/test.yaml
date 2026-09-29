@@ -15,6 +15,7 @@ jobs:
         features:
           - pass-cli
           - playwright-cli
+          - jev
         baseImage:
           - debian:latest
           - ubuntu:latest
@@ -36,6 +37,7 @@ jobs:
         features:
           - pass-cli
           - playwright-cli
+          - jev
     steps:
       - uses: actions/checkout@v4
 
