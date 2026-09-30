@@ -17,6 +17,7 @@ jobs:
           - playwright-cli
           - noteexpand
           - jev
+          - cve-2026-66066
         baseImage:
           - debian:latest
           - ubuntu:latest
@@ -40,6 +41,7 @@ jobs:
           - playwright-cli
           - noteexpand
           - jev
+          - cve-2026-66066
     steps:
       - uses: actions/checkout@v4
 
