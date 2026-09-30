@@ -61,7 +61,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
       - name: "Pkl scenario invariants (host, no container)"
-        run: pkl test --module-path src/evidence/pkl test/_global/cit-286-contract/cit-286-contract.test.pkl
+        run: pkl test --module-path src/evidence/pkl:src/jev/pkl test/_global/cit-286-contract/cit-286-contract.test.pkl
+      - name: "Install pkl-python (the jev bin builds requests through Jev.pkl)"
+        run: python3 -m pip install "pkl-python==0.1.19"
       - name: "Deterministic contract driver (host, no container, zero real calls)"
         env:
           EVIDENCE_LIB: ${{ github.workspace }}/src/evidence/lib
