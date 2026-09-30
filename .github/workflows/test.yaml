@@ -30,14 +30,6 @@ jobs:
       - name: "Generating tests for '${{ matrix.features }}' against '${{ matrix.baseImage }}'"
         run: devcontainer features test --skip-scenarios -f ${{ matrix.features }} -i ${{ matrix.baseImage }} .
 
-      - name: "Upload noteexpand scenario records"
-        if: always() && matrix.features == 'noteexpand'
-        uses: actions/upload-artifact@v4
-        with:
-          name: noteexpand-default-${{ strategy.job-index }}
-          path: /tmp/devcontainercli/container-features-test/**/noteexpand-records/**
-          if-no-files-found: warn
-
   test-scenarios:
     runs-on: ubuntu-latest
     continue-on-error: true
