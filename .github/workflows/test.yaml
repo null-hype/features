@@ -7,10 +7,12 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
-# A new push to a PR supersedes the run in flight; main keeps every run.
+# A new push to a PR supersedes the run in flight.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Only PR runs share a group; every other run gets its own (run_id), so
+  # pushes to main are never cancelled or replaced while queued.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   # Both jobs below are continue-on-error, so they inform rather than gate.
@@ -33,8 +35,10 @@ jobs:
               - '.github/workflows/test.yaml'
             pass-cli: ['src/pass-cli/**', 'test/pass-cli/**']
             playwright-cli: ['src/playwright-cli/**', 'test/playwright-cli/**']
-            noteexpand: ['src/noteexpand/**', 'test/noteexpand/**']
-            jev: ['src/jev/**', 'test/jev/**']
+            # A feature's scenarios also install the features they compose
+            # (test/<feature>/scenarios.json), so those changes select it too.
+            noteexpand: ['src/noteexpand/**', 'test/noteexpand/**', 'src/jev/**']
+            jev: ['src/jev/**', 'test/jev/**', 'src/pass-cli/**']
             cve-2026-66066: ['src/cve-2026-66066/**', 'test/cve-2026-66066/**']
       - id: set
         run: |

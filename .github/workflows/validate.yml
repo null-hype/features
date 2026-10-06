@@ -7,8 +7,10 @@ on:
       - '.github/workflows/validate.yml'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Only PR runs share a group; every other run gets its own (run_id), so
+  # pushes to main are never cancelled or replaced while queued.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   validate:
