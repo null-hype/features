@@ -40,9 +40,10 @@ jobs:
             noteexpand: ['src/noteexpand/**', 'test/noteexpand/**', 'src/jev/**']
             jev: ['src/jev/**', 'test/jev/**', 'src/pass-cli/**']
             cve-2026-66066: ['src/cve-2026-66066/**', 'test/cve-2026-66066/**']
+            protondrive: ['src/protondrive/**', 'test/protondrive/**']
       - id: set
         run: |
-          all='["pass-cli","playwright-cli","noteexpand","jev","cve-2026-66066"]'
+          all='["pass-cli","playwright-cli","noteexpand","jev","cve-2026-66066","protondrive"]'
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             features=$all
           else
