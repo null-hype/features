@@ -1,0 +1,17 @@
+{
+    "name": "witness",
+    "id": "witness",
+    "version": "0.1.0",
+    "description": "Installs witness, a language server that shows verification findings (.witness/run/findings.json) as editor diagnostics with go-to-evidence, plus its Neovim client and a recorded example run.",
+    "documentationURL": "https://github.com/null-hype/witness",
+    "options": {
+        "version": {
+            "type": "string",
+            "default": "v0.1.0",
+            "description": "A tag, branch or full commit SHA of github.com/null-hype/witness."
+        }
+    },
+    "dependsOn": {
+        "ghcr.io/devcontainers/features/go:1": {}
+    }
+}

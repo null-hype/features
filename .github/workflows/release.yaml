@@ -11,7 +11,7 @@ jobs:
       pull-requests: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: "Publish Features"
         uses: devcontainers/action@v1
@@ -45,34 +45,3 @@ jobs:
               git push origin "$branch"
               gh pr create --title "$message" --body "$message"
           fi
-
-  linear-release:
-    needs: deploy
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      # `secret` names the GitHub secret (LINEAR_KEY_<secret>) for this
-      # feature's Linear pipeline. It's independent of `name` - renaming a
-      # feature doesn't rename its GitHub secret, so this keeps the value
-      # from before the feature was renamed (color->pass-cli, hello->playwright-cli).
-      matrix:
-        feature:
-          - name: pass-cli
-            path: src/pass-cli/**
-            secret: COLOR
-          - name: playwright-cli
-            path: src/playwright-cli/**
-            secret: HELLO
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: "Linear release: ${{ matrix.feature.name }}"
-        uses: linear/linear-release-action@v0
-        with:
-          access_key: ${{ secrets[format('LINEAR_KEY_{0}', matrix.feature.secret)] }}
-          include_paths: ${{ matrix.feature.path }}
-          dry_run: ${{ github.ref != 'refs/heads/main' }}
