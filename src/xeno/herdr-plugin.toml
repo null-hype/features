@@ -1,0 +1,16 @@
+id = "null-hype.xeno"
+name = "xeno"
+version = "0.1.0"
+min_herdr_version = "0.9.5"
+description = "Labels a pane whose agent finished without running both a positive and a negative control."
+platforms = ["linux", "macos"]
+
+# Installed straight from GitHub (herdr plugin install null-hype/features/src/xeno),
+# the plugin builds itself. The Dev Container feature builds it instead, because
+# `herdr plugin link` does not run build commands.
+[[build]]
+command = ["go", "build", "-o", "xeno", "."]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["./xeno"]

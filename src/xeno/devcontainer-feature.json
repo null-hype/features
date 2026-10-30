@@ -1,0 +1,10 @@
+{
+    "name": "xeno",
+    "id": "xeno",
+    "version": "0.1.0",
+    "description": "Installs Herdr and the xeno plugin, which labels a pane whose agent finished without running both a positive and a negative control.",
+    "documentationURL": "https://github.com/null-hype/features/tree/main/src/xeno",
+    "dependsOn": {
+        "ghcr.io/devcontainers/features/go:1": {}
+    }
+}
