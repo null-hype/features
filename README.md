@@ -27,6 +27,35 @@ The `version` option selects a Witness tag, branch, or full commit SHA
 (default: `v0.1.0`). See the [manifest](src/witness/devcontainer-feature.json)
 and [installer](src/witness/install.sh).
 
+## xeno
+
+An agent is a process, so "on target" is a property of how the work runs:
+was it run with a positive control and a negative control? xeno is a
+[Herdr](https://herdr.dev) plugin that asks this whenever an agent pane
+becomes `done`.
+
+It reads the Proton Pass agent monitor (`pass-cli agent monitor --output
+json`). Each fetch carries a plain-sentence `PROTON_PASS_AGENT_REASON`; a
+reason starting "positive control" or "negative control" counts as that
+control having run. The pane's done label then reads:
+
+- `done`: both controls ran
+- `done · uncontrolled`: at least one did not
+- `done · unverified`: the monitor could not be read
+
+Set `XENO_MONITOR` in Herdr's environment to change the monitor command, for
+example to name the agent: `pass-cli agent monitor my-agent --output json`.
+
+Install the feature, or the plugin on its own:
+
+```sh
+herdr plugin install null-hype/features/src/xeno --yes
+```
+
+The scenario drives a headless `herdr server` through all three labels, with
+the negative control first. Version 0.1.0 checks that the controls ran, not
+that they discriminated, and does not yet tie monitor records to a pane.
+
 ## Boundaries
 
 [worlds](https://github.com/null-hype/worlds) captures delivery evidence;
