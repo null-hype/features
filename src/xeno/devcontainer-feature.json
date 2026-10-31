@@ -1,0 +1,8 @@
+{
+    "id": "xeno",
+    "version": "0.1.0",
+    "name": "xeno",
+    "description": "Herdr with the xeno plugin: is each agent on target? Verifier, Jev and falsifier lights on its sidebar row.",
+    "documentationURL": "https://github.com/null-hype/features/tree/main/src/xeno",
+    "options": {}
+}
