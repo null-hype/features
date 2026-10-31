@@ -16,7 +16,7 @@ if ! command -v herdr >/dev/null; then
 fi
 
 mkdir -p /usr/local/share/xeno
-cp -r "$(dirname "$0")/plugin" /usr/local/share/xeno/
+cp -r "$(dirname "$0")/plugin" "$(dirname "$0")/example" /usr/local/share/xeno/
 chmod +x /usr/local/share/xeno/plugin/xeno
 ln -sf /usr/local/share/xeno/plugin/xeno /usr/local/bin/xeno
 

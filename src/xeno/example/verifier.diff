@@ -1,0 +1,21 @@
+diff --git a/install.log b/install.log
+new file mode 100644
+--- /dev/null
++++ b/install.log
+@@ -0,0 +7 @@
++$ devcontainer up --workspace-folder . --config .devcontainer/witness.json
++[features] ghcr.io/devcontainers/features/go:1 (dependsOn of witness)
++[features] ghcr.io/null-hype/features/witness:0
++witness installed to /usr/local/bin/witness
++Container started.
++$ devcontainer exec --workspace-folder . which witness
++/usr/local/bin/witness
+diff --git a/.devcontainer/witness.json b/.devcontainer/witness.json
+new file mode 100644
+--- /dev/null
++++ b/.devcontainer/witness.json
+@@ -0,0 +4 @@
++{
++  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
++  "features": { "ghcr.io/null-hype/features/witness:0": {} }
++}

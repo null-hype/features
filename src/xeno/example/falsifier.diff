@@ -1,0 +1,11 @@
+diff --git a/install.log b/install.log
+new file mode 100644
+--- /dev/null
++++ b/install.log
+@@ -0,0 +6 @@
++$ jq 'del(.dependsOn)' src/witness/devcontainer-feature.json  # the counterexample
++$ devcontainer up --workspace-folder . --config .devcontainer/witness-without-go.json
++[features] ghcr.io/null-hype/features/witness (dependsOn removed)
++install.sh: line 21: /usr/local/go/bin/go: not found
++ERROR: Feature "witness" failed to install.
++exit status 1

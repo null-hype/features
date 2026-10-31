@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # xeno: is this agent on target? Three lights on its Herdr sidebar row.
 #
-#   xeno verifier confirmed|failed   the verifier's result (green light)
-#   xeno falsifier refuted|failed    the falsifier's result (red light)
-#   xeno jev <0..1>                  Jev's confidence both arms were genuine (amber light)
-#   xeno clear                       remove this pane's lights
+#   xeno claim <file>:<line>                    where the claim lives (e.g. its +check)
+#   xeno verifier confirmed|failed [evidence]   the verifier's result (green light)
+#   xeno falsifier refuted|failed [evidence]    the falsifier's result (red light)
+#   xeno jev <0..1>                             Jev's confidence both arms were genuine (amber light)
+#   xeno clear                                  remove this pane's lights
 #
 # A light is hollow until its arm reports. The status names the run:
 #   uncontrolled  an arm has not reported
@@ -12,6 +13,10 @@
 #   confirmed     on target, verifier confirmed, falsifier failed
 #   refuted       on target, falsifier refuted (a success, not bad news)
 #   inconclusive  on target, neither arm got its way
+#
+# With a claim, xeno also writes a witness run (.witness/run, or
+# XENO_RUN_DIR): one finding on the claim, uncontrolled a warning, unverified
+# an error, anything on target information, the arms' evidence beside it.
 set -euo pipefail
 
 herdr=${HERDR_BIN_PATH:-herdr}
@@ -20,22 +25,33 @@ dir=${XDG_STATE_HOME:-$HOME/.local/state}/xeno
 file=$dir/${pane//[^A-Za-z0-9_.-]/_}
 mkdir -p "$dir"
 
-verifier='' falsifier='' jev=''
+claim='' verifier='' verifier_evidence='' falsifier='' falsifier_evidence='' jev=''
 if [[ -f $file ]]; then
     while IFS='=' read -r key value; do
         case $key in
+            claim) claim=$value ;;
             verifier) verifier=$value ;;
+            verifier_evidence) verifier_evidence=$value ;;
             falsifier) falsifier=$value ;;
+            falsifier_evidence) falsifier_evidence=$value ;;
             jev) jev=$value ;;
         esac
     done <"$file"
 fi
 
-usage() { sed -n '4,7s/^# \{0,3\}//p' "$0" >&2; exit 2; }
+usage() { sed -n '4,8s/^# \{0,3\}//p' "$0" >&2; exit 2; }
+evidence() { [[ -z ${1:-} ]] || { [[ -f $1 ]] || usage; realpath "$1"; }; }
 
 case ${1:-} in
-    verifier) [[ ${2:-} =~ ^(confirmed|failed)$ ]] || usage; verifier=$2 ;;
-    falsifier) [[ ${2:-} =~ ^(refuted|failed)$ ]] || usage; falsifier=$2 ;;
+    claim) [[ ${2:-} =~ ^.+:[0-9]+$ ]] || usage; claim=$2 ;;
+    verifier)
+        [[ ${2:-} =~ ^(confirmed|failed)$ ]] || usage
+        verifier=$2 verifier_evidence=$(evidence "${3:-}")
+        ;;
+    falsifier)
+        [[ ${2:-} =~ ^(refuted|failed)$ ]] || usage
+        falsifier=$2 falsifier_evidence=$(evidence "${3:-}")
+        ;;
     jev) [[ ${2:-} =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || usage; jev=$2 ;;
     clear)
         rm -f "$file"
@@ -46,7 +62,8 @@ case ${1:-} in
     *) usage ;;
 esac
 
-printf 'verifier=%s\nfalsifier=%s\njev=%s\n' "$verifier" "$falsifier" "$jev" >"$file"
+printf '%s\n' "claim=$claim" "verifier=$verifier" "verifier_evidence=$verifier_evidence" \
+    "falsifier=$falsifier" "falsifier_evidence=$falsifier_evidence" "jev=$jev" >"$file"
 
 genuine() { [[ -n $jev ]] && awk -v j="$jev" 'BEGIN { exit !(j >= 0.7) }'; }
 
@@ -65,4 +82,37 @@ if [[ -z $jev ]]; then amber='○'; elif genuine; then amber='●'; else amber='
     --token "xeno_jev=$amber" \
     --token "xeno_verifier=$(light "$verifier")" \
     --token "xeno_status=$status" >/dev/null
+
+if [[ -n $claim ]]; then
+    case $status in
+        uncontrolled) severity=warning ;;
+        unverified) severity=error ;;
+        *) severity=information ;;
+    esac
+    run=${XENO_RUN_DIR:-.witness/run}
+    rm -rf "$run/evidence"
+    mkdir -p "$run/evidence"
+    links=()
+    for arm in verifier falsifier; do
+        src=${arm}_evidence
+        [[ -n ${!src} ]] || continue
+        cp "${!src}" "$run/evidence/$arm.diff"
+        links+=("\"evidence/$arm.diff\"")
+    done
+    message="$status: verifier ${verifier:-not run}, falsifier ${falsifier:-not run}, Jev ${jev:-not asked}"
+    cat >"$run/findings.json" <<EOF
+{
+  "version": 1,
+  "findings": [
+    {
+      "id": "xeno",
+      "location": { "file": "${claim%:*}", "line": ${claim##*:}, "column": 1 },
+      "severity": "$severity",
+      "message": "$message",
+      "evidence": [$(IFS=,; echo "${links[*]}")]
+    }
+  ]
+}
+EOF
+fi
 echo "$status"
