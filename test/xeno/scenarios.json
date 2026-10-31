@@ -1,0 +1,14 @@
+{
+    "lights": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "xeno": {}
+        }
+    },
+    "people-can-install-witness": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "xeno": {}
+        }
+    }
+}

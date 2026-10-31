@@ -1,0 +1,12 @@
+id = "null-hype.xeno"
+name = "xeno"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "Is this agent on target? Verifier, Jev and falsifier lights on its sidebar row."
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "clear"
+title = "Clear xeno lights"
+contexts = ["pane"]
+command = ["./xeno", "clear"]
