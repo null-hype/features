@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -27,6 +28,9 @@ func TestJevTransport(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Header.Get("TypeSafe-Danger-Zone-Long-Context") != "" {
+					t.Fatal("ordinary request enabled long context")
+				}
 				if r.Header.Get("Authorization") != "Bearer fixture-key" {
 					t.Fatal("missing authorization")
 				}
@@ -48,6 +52,71 @@ func TestJevTransport(t *testing.T) {
 			}
 			if tc.valid && (scores[0].Fits != 0.94 || scores[0].Achieved != 0.05) {
 				t.Fatal("scores collapsed")
+			}
+		})
+	}
+}
+
+func TestJevLongContextFallback(t *testing.T) {
+	const budget = `{"detail":{"error_type":"max_tokens_exceeded"}}`
+	const success = `{"model":"jev-1.14.0","answers":{"fit0":{"noul":0.94},"achieved0":{"noul":0.85}}}`
+	for _, tc := range []struct {
+		name, initial, retry, wantError string
+		status, wantCalls               int
+		long                            bool
+	}{
+		{"budget-retry", budget, success, "", 400, 2, true},
+		{"budget-still-exceeded", budget, budget, "Jev HTTP 400 (max_tokens_exceeded)", 400, 2, true},
+		{"other-400", `{"detail":{"error_type":"invalid_state"}}`, "", "Jev HTTP 400 (invalid_state)", 400, 1, false},
+		{"wrong-status", budget, "", "Jev HTTP 413 (max_tokens_exceeded)", 413, 1, false},
+		{"unsafe-error-type", `{"detail":{"error_type":"max_tokens_exceeded: secret-input"}}`, "", "Jev HTTP 400", 400, 1, false},
+		{"not-structured-error", `max_tokens_exceeded`, "", "Jev HTTP 400", 400, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			var original []byte
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if calls == 1 {
+					original = body
+					if r.Header.Get("TypeSafe-Danger-Zone-Long-Context") != "" {
+						t.Fatal("long context was enabled before a budget rejection")
+					}
+					return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.initial))}, nil
+				}
+				if calls > tc.wantCalls {
+					t.Fatal("unexpected extra retry")
+				}
+				if string(body) != string(original) || r.Header.Get("TypeSafe-Danger-Zone-Long-Context") != "true" {
+					t.Fatal("retry changed the full payload or omitted the documented header")
+				}
+				if r.Header.Get("Authorization") != "Bearer fixture-key" || r.Header.Get("Content-Type") != "application/json" {
+					t.Fatal("retry changed ordinary transport headers")
+				}
+				status := http.StatusOK
+				if tc.wantError != "" {
+					status = http.StatusBadRequest
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(tc.retry))}, nil
+			})}
+			scores, _, response, err := scoreReasons(client, "https://example.invalid", "fixture-key", map[string]any{"trace": strings.Repeat("full observed work ", 10000)}, []string{"Classify probe health."})
+			if calls != tc.wantCalls || response.LongContext != tc.long {
+				t.Fatalf("calls %d, long context %v", calls, response.LongContext)
+			}
+			if tc.wantError == "" {
+				if err != nil || len(scores) != 1 || scores[0].Fits != .94 || scores[0].Achieved != .85 {
+					t.Fatalf("retry lost scores: %v, %v", scores, err)
+				}
+			} else if err == nil || err.Error() != tc.wantError || scores != nil {
+				t.Fatalf("error = %v, want %q; scores %v", err, tc.wantError, scores)
+			}
+			encoded, _ := json.Marshal(response)
+			if !strings.Contains(string(encoded), `"longContext":`) {
+				t.Fatal("transport provenance missing from retained response")
 			}
 		})
 	}
@@ -117,6 +186,66 @@ func TestStopBeforeTranscriptFlush(t *testing.T) {
 	explicit, _, err := claudeState(raw, nil)
 	if err != nil || explicit["stop_hook"] != nil {
 		t.Fatal("explicit trace assessment invented a hook response")
+	}
+}
+
+func TestNestedNativeMediaProjection(t *testing.T) {
+	data := strings.Repeat("iVBORw0KGgoAAAANSUhEUg==", 1000)
+	message := map[string]any{
+		"type": "user", "sessionId": "native-id",
+		"message": map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "tool_result", "tool_use_id": "screenshot-call", "content": []any{
+				map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": data}},
+				map[string]any{"type": "text", "text": "Screenshot captured; measured layout has no horizontal overflow."},
+			}},
+		}},
+	}
+	raw, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A tool argument with base64-looking text is substantive tool activity,
+	// not structured media. Preserve it and exact JSON integer values.
+	raw = append(raw, []byte("\n"+`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"layout-check","name":"Bash","input":{"data":"retain tool input","type":"base64","number":9007199254740993}}]}}`)...)
+	original := bytes.Clone(raw)
+	originalHash := contentHash(raw)
+	state, _, err := claudeState(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(data)) || len(encoded) >= len(raw) {
+		t.Fatal("binary media was sent to the text scorer")
+	}
+	for _, required := range []string{"binary media not evaluated by text scorer", "image/png", contentHash([]byte(data)), "Screenshot captured; measured layout has no horizontal overflow.", "screenshot-call", "layout-check", "retain tool input", "9007199254740993"} {
+		if !bytes.Contains(encoded, []byte(required)) {
+			t.Fatalf("projection lost %q", required)
+		}
+	}
+	event := state["trace"].([]any)[0].(map[string]any)
+	content := event["message"].(map[string]any)["content"].([]any)
+	image := content[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+	source := image["source"].(map[string]any)
+	if source["encodedByteLength"] != len(data) || source["type"] != "reference" || source["data"] != nil {
+		t.Fatalf("incomplete media reference: %v", source)
+	}
+	if !bytes.Equal(raw, original) || contentHash(raw) != originalHash {
+		t.Fatal("scoring projection mutated the native trace or its evidence hash")
+	}
+}
+
+func TestMediaProjectionPreservesURLSources(t *testing.T) {
+	raw := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.invalid/screenshot.png"}},{"type":"text","text":"base64 text stays text"}]}}`)
+	state, _, err := claudeState(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(state)
+	if !bytes.Contains(encoded, []byte("https://example.invalid/screenshot.png")) || !bytes.Contains(encoded, []byte("base64 text stays text")) || bytes.Contains(encoded, []byte("encodedHash")) {
+		t.Fatal("non-binary content was changed")
 	}
 }
 

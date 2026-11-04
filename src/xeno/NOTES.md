@@ -70,3 +70,33 @@ reason, and a deliberately wrong classification reply. The wrong reply was
 predicted to yield `unfulfilled`; Jev also lowered the reason-fit score, so
 it yielded `uncertain`. This missed prediction stays in the capture. The
 replay test checks transport and recorded verdicts without another API call.
+
+## Reasons × threads
+
+For one Herdr session, select its completed Claude JSONL traces explicitly:
+
+```sh
+xeno heatmap \
+  --positive 'Verify that Claude distinguishes healthy and failed HTTP probes.' \
+  --negative 'Deploy a production Kubernetes cluster.' \
+  --output .witness/run/evidence \
+  /path/to/session-thread-a.jsonl /path/to/session-thread-b.jsonl
+```
+
+The command refreshes the signed-in Pass agent's audit and reuses the existing
+reason assessor for each whole thread. `--reasons /path/to/reasons.json` selects
+a retained `pass-cli agent monitor --output json` export instead. Supply a resolved
+`TYPESAFE_API_KEY`, as for `assess`. Use completed traces: Stop hooks remain the
+single-thread assessment path.
+
+Open `reason-heatmap.html` in the output directory. Rows are distinct ItemRead
+reasons plus the marked positive and negative controls. Columns are the selected
+threads. Color represents reason fit; the separate achievement score is also
+visible. The positive control expects at least one fit ≥ 0.8; the negative
+expects every fit ≤ 0.2. `missed` preserves a failed expectation. API failures
+produce `unverified` cells and a nonzero exit, while retaining available results.
+
+The adjacent private `reason-heatmap.json` retains exact requests/responses,
+trace paths and hashes, and the audit hash. Control expectations are not sent
+as model state. This command does not infer thread membership or project
+completion, change Herdr pane verdicts, or publish anything.

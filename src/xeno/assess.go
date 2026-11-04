@@ -27,8 +27,9 @@ type reasonScore struct {
 }
 
 type jevResponse struct {
-	Model   string `json:"model"`
-	Answers map[string]struct {
+	Model       string `json:"model"`
+	LongContext bool   `json:"longContext"`
+	Answers     map[string]struct {
 		Noul *float64 `json:"noul"`
 	} `json:"answers"`
 }
@@ -58,23 +59,45 @@ func scoreReasons(client *http.Client, endpoint, key string, state any, reasons 
 	if err != nil {
 		return nil, request, jevResponse{}, err
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, request, jevResponse{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, request, jevResponse{}, errors.New("Jev request failed")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, request, jevResponse{}, fmt.Errorf("Jev HTTP %d", resp.StatusCode)
-	}
 	var answer jevResponse
-	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&answer) != nil || answer.Model != jevModel {
-		return nil, request, answer, errors.New("invalid Jev response or model")
+	longContext := false
+	for {
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, request, jevResponse{LongContext: longContext}, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key)
+		if longContext {
+			req.Header.Set("TypeSafe-Danger-Zone-Long-Context", "true")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, request, jevResponse{LongContext: longContext}, errors.New("Jev request failed")
+		}
+		if resp.StatusCode != http.StatusOK {
+			errorType := jevErrorType(resp.Body)
+			resp.Body.Close()
+			// Retry the identical full request only when TypeSafe identifies
+			// the default context budget as the reason it could not run.
+			if resp.StatusCode == http.StatusBadRequest && errorType == "max_tokens_exceeded" && !longContext {
+				longContext = true
+				continue
+			}
+			message := fmt.Sprintf("Jev HTTP %d", resp.StatusCode)
+			if errorType != "" {
+				message += " (" + errorType + ")"
+			}
+			return nil, request, jevResponse{LongContext: longContext}, errors.New(message)
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&answer)
+		resp.Body.Close()
+		// Local transport provenance, never trusted from a response field.
+		answer.LongContext = longContext
+		if decodeErr != nil || answer.Model != jevModel {
+			return nil, request, answer, errors.New("invalid Jev response or model")
+		}
+		break
 	}
 	values := map[string]float64{}
 	for name := range questions {
@@ -89,6 +112,29 @@ func scoreReasons(client *http.Client, endpoint, key string, state any, reasons 
 		scores = append(scores, reasonScore{reason, values[fmt.Sprintf("fit%d", i)], values[fmt.Sprintf("achieved%d", i)]})
 	}
 	return scores, request, answer, nil
+}
+
+// Keep service error types useful without copying free-form response text,
+// which may echo input. Only a short machine identifier is safe to retain.
+func jevErrorType(body io.Reader) string {
+	var response struct {
+		Detail struct {
+			ErrorType string `json:"error_type"`
+		} `json:"detail"`
+	}
+	if json.NewDecoder(io.LimitReader(body, 4<<20)).Decode(&response) != nil {
+		return ""
+	}
+	kind := response.Detail.ErrorType
+	if len(kind) == 0 || len(kind) > 64 {
+		return ""
+	}
+	for _, c := range kind {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return ""
+		}
+	}
+	return kind
 }
 
 func reasonStatus(scores []reasonScore) string {
@@ -132,10 +178,13 @@ func traceState(raw []byte) ([]any, int, error) {
 		projection := map[string]any{"type": kind}
 		switch kind {
 		case "user", "assistant":
-			if !json.Valid(e["message"]) {
+			var message any
+			decoder := json.NewDecoder(bytes.NewReader(e["message"]))
+			decoder.UseNumber()
+			if decoder.Decode(&message) != nil {
 				return nil, line, errors.New("Claude message is missing")
 			}
-			projection["message"] = e["message"]
+			projection["message"] = textScorerMedia(message)
 		case "system":
 			var subtype string
 			json.Unmarshal(e["subtype"], &subtype)
@@ -158,6 +207,36 @@ func traceState(raw []byte) ([]any, int, error) {
 		return nil, last, errors.New("Claude trace contains no usable messages")
 	}
 	return events, last, nil
+}
+
+// Jev reads text. Preserve all text and tool activity, replacing structured
+// binary media with an explicit reference, including inside tool results.
+// This only changes the decoded scoring projection, never the native log.
+func textScorerMedia(value any) any {
+	switch v := value.(type) {
+	case []any:
+		for i, item := range v {
+			v[i] = textScorerMedia(item)
+		}
+	case map[string]any:
+		kind, _ := v["type"].(string)
+		switch kind {
+		case "image", "document", "audio", "video":
+			if source, ok := v["source"].(map[string]any); ok && source["type"] == "base64" {
+				if data, ok := source["data"].(string); ok {
+					delete(source, "data")
+					source["type"] = "reference"
+					source["evaluation"] = "binary media not evaluated by text scorer"
+					source["encodedHash"] = contentHash([]byte(data))
+					source["encodedByteLength"] = len(data)
+				}
+			}
+		}
+		for key, item := range v {
+			v[key] = textScorerMedia(item)
+		}
+	}
+	return value
 }
 
 func claudeState(raw []byte, final *string) (map[string]any, int, error) {
@@ -286,25 +365,11 @@ func assess(args []string) error {
 		if err != nil {
 			return errors.New("cannot read reasons.json; run xeno refresh first")
 		}
-		var audit []struct {
-			Action  string `json:"action"`
-			Payload struct {
-				Reason string `json:"reason"`
-			} `json:"payload"`
-		}
-		if json.Unmarshal(records, &audit) != nil || audit == nil {
-			return errors.New("invalid reasons.json")
+		reasons, err := auditReasons(records)
+		if err != nil {
+			return err
 		}
 		assessment["audit"] = json.RawMessage(records)
-		reasons, seen := []string{}, map[string]bool{}
-		for _, r := range audit {
-			if r.Action == "ItemRead" && strings.TrimSpace(r.Payload.Reason) != "" && !seen[r.Payload.Reason] {
-				reasons, seen[r.Payload.Reason] = append(reasons, r.Payload.Reason), true
-			}
-		}
-		if len(reasons) == 0 {
-			return errors.New("no ItemRead reasons to assess")
-		}
 		key := os.Getenv("TYPESAFE_API_KEY")
 		if key == "" || strings.HasPrefix(key, "pass://") {
 			return errors.New("TYPESAFE_API_KEY must be resolved before assessment")
