@@ -15,7 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Both jobs below are continue-on-error, so they inform rather than gate.
   # Test only the features whose src/ or test/ changed (all of them on
   # workflow_dispatch or when this workflow changes), and skip draft PRs
   # until they are marked ready.
@@ -49,7 +48,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.features != '[]' && needs.changes.outputs.features != ''
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       matrix:
         features: ${{ fromJSON(needs.changes.outputs.features) }}
@@ -70,7 +68,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.features != '[]' && needs.changes.outputs.features != ''
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       matrix:
         features: ${{ fromJSON(needs.changes.outputs.features) }}

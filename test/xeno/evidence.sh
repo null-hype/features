@@ -51,3 +51,33 @@ if xeno refresh; then
     exit 1
 fi
 cmp "$work/last-good.json" "$XENO_STATE_DIR/reasons.json"
+
+# When an agent finishes, Xeno labels its pane from fresh audit records.
+cat >"$work/bin/herdr" <<'HERDR'
+#!/bin/sh
+printf '%s\n' "$*" >"$XENO_TEST_HERDR"
+HERDR
+chmod +x "$work/bin/herdr"
+export HERDR_BIN_PATH="$work/bin/herdr"
+export XENO_TEST_HERDR="$work/herdr.args"
+
+finish() {
+    rm -f "$XENO_TEST_HERDR"
+    HERDR_PLUGIN_EVENT_JSON="{\"data\":{\"pane_id\":\"p1\",\"agent_status\":\"$1\"}}" xeno label
+}
+
+printf '%s\n' '[{"payload":{"reason":"Positive control: rerun the check"}},{"payload":{"reason":"negative control: remove the Go feature"}}]' >"$XENO_TEST_LOG"
+finish done
+grep -qx 'pane report-metadata p1 --source xeno --state-label done=done' "$XENO_TEST_HERDR"
+
+printf '%s\n' '[{"payload":{"reason":"positive control: rerun the check"}}]' >"$XENO_TEST_LOG"
+finish done
+grep -qx 'pane report-metadata p1 --source xeno --state-label done=done · uncontrolled' "$XENO_TEST_HERDR"
+
+printf '%s\n' 'invalid JSON' >"$XENO_TEST_LOG"
+finish done
+grep -qx 'pane report-metadata p1 --source xeno --state-label done=done · unverified' "$XENO_TEST_HERDR"
+
+# A pane that is still working is left alone.
+finish working
+test ! -e "$XENO_TEST_HERDR"

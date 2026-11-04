@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -23,8 +24,11 @@ func main() {
 }
 
 func command(args []string) (int, error) {
+	if len(args) == 1 && args[0] == "label" {
+		return label()
+	}
 	if len(args) != 1 || (args[0] != "init" && args[0] != "refresh") {
-		return 2, errors.New("usage: xeno init | refresh")
+		return 2, errors.New("usage: xeno init | refresh | label")
 	}
 	startup := args[0] == "init"
 	if startup && os.Getenv("PROTON_PASS_PERSONAL_ACCESS_TOKEN") == "" {
@@ -40,14 +44,21 @@ func command(args []string) (int, error) {
 	return 0, nil
 }
 
+func stateDir() (string, error) {
+	if dir := os.Getenv("XENO_STATE_DIR"); dir != "" {
+		return dir, nil
+	}
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(userHome, ".xeno"), nil
+}
+
 func refresh() error {
-	dir := os.Getenv("XENO_STATE_DIR")
-	if dir == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		dir = filepath.Join(userHome, ".xeno")
+	dir, err := stateDir()
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -122,4 +133,91 @@ func atomicWrite(path string, data []byte) error {
 		return closeErr
 	}
 	return os.Rename(file.Name(), path)
+}
+
+type event struct {
+	Data struct {
+		PaneID      string `json:"pane_id"`
+		AgentStatus string `json:"agent_status"`
+	} `json:"data"`
+}
+
+// label runs on Herdr's pane.agent_status_changed. When an agent finishes, it
+// refreshes the audit records and labels the pane uncontrolled unless they hold
+// both a positive and a negative control reason, or unverified if they cannot
+// be fetched: missing evidence is not a clean result.
+func label() (int, error) {
+	var ev event
+	if err := json.Unmarshal([]byte(os.Getenv("HERDR_PLUGIN_EVENT_JSON")), &ev); err != nil {
+		return 1, fmt.Errorf("event: %w", err)
+	}
+	if ev.Data.AgentStatus != "done" || ev.Data.PaneID == "" {
+		return 0, nil
+	}
+
+	state := "done"
+	positive, negative, err := latestControls()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "xeno:", err)
+		state = "done · unverified"
+	} else if !(positive && negative) {
+		state = "done · uncontrolled"
+	}
+
+	herdr := os.Getenv("HERDR_BIN_PATH")
+	if herdr == "" {
+		herdr = "herdr"
+	}
+	cmd := exec.Command(herdr, "pane", "report-metadata", ev.Data.PaneID,
+		"--source", "xeno", "--state-label", "done="+state)
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return 1, fmt.Errorf("report-metadata: %w", err)
+	}
+	return 0, nil
+}
+
+func latestControls() (positive, negative bool, err error) {
+	if err := refresh(); err != nil {
+		return false, false, err
+	}
+	dir, err := stateDir()
+	if err != nil {
+		return false, false, err
+	}
+	out, err := os.ReadFile(filepath.Join(dir, "reasons.json"))
+	if err != nil {
+		return false, false, err
+	}
+	return controls(out)
+}
+
+// controls reports whether the records hold a positive and a negative control
+// reason. The monitor's JSON shape is not documented, so every "reason" string
+// anywhere in it counts.
+func controls(out []byte) (positive, negative bool, err error) {
+	var doc any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		return false, false, err
+	}
+	var walk func(any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, x := range v {
+				if s, ok := x.(string); ok && k == "reason" {
+					r := strings.ToLower(strings.TrimSpace(s))
+					positive = positive || strings.HasPrefix(r, "positive control")
+					negative = negative || strings.HasPrefix(r, "negative control")
+				}
+				walk(x)
+			}
+		case []any:
+			for _, x := range v {
+				walk(x)
+			}
+		}
+	}
+	walk(doc)
+	return positive, negative, nil
 }

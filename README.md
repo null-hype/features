@@ -52,6 +52,12 @@ The file may include item and vault names. It is readable only by its owner.
 Run `xeno refresh` or invoke **Refresh Xeno access evidence** in Herdr to
 fetch the latest records. A failed refresh preserves the last good file.
 
+When an agent in a Herdr pane finishes, Xeno refreshes the records and labels
+the pane. A reason that starts with "positive control" or "negative control"
+counts as that control having run. Without both, the pane shows
+`done · uncontrolled`; if the records cannot be fetched, it shows
+`done · unverified`.
+
 For a standalone Herdr install, install Go and Pass CLI first. The refresh
 action can use a PAT from Herdr's environment or an existing Pass user session.
 For a user session, set `XENO_PASS_AGENT` to the agent's name.
