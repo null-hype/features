@@ -27,6 +27,9 @@ func TestJevTransport(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Header.Get("TypeSafe-Danger-Zone-Long-Context") != "" {
+					t.Fatal("ordinary request enabled long context")
+				}
 				if r.Header.Get("Authorization") != "Bearer fixture-key" {
 					t.Fatal("missing authorization")
 				}
@@ -48,6 +51,71 @@ func TestJevTransport(t *testing.T) {
 			}
 			if tc.valid && (scores[0].Fits != 0.94 || scores[0].Achieved != 0.05) {
 				t.Fatal("scores collapsed")
+			}
+		})
+	}
+}
+
+func TestJevLongContextFallback(t *testing.T) {
+	const budget = `{"detail":{"error_type":"max_tokens_exceeded"}}`
+	const success = `{"model":"jev-1.14.0","answers":{"fit0":{"noul":0.94},"achieved0":{"noul":0.85}}}`
+	for _, tc := range []struct {
+		name, initial, retry, wantError string
+		status, wantCalls               int
+		long                            bool
+	}{
+		{"budget-retry", budget, success, "", 400, 2, true},
+		{"budget-still-exceeded", budget, budget, "Jev HTTP 400 (max_tokens_exceeded)", 400, 2, true},
+		{"other-400", `{"detail":{"error_type":"invalid_state"}}`, "", "Jev HTTP 400 (invalid_state)", 400, 1, false},
+		{"wrong-status", budget, "", "Jev HTTP 413 (max_tokens_exceeded)", 413, 1, false},
+		{"unsafe-error-type", `{"detail":{"error_type":"max_tokens_exceeded: secret-input"}}`, "", "Jev HTTP 400", 400, 1, false},
+		{"not-structured-error", `max_tokens_exceeded`, "", "Jev HTTP 400", 400, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			var original []byte
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if calls == 1 {
+					original = body
+					if r.Header.Get("TypeSafe-Danger-Zone-Long-Context") != "" {
+						t.Fatal("long context was enabled before a budget rejection")
+					}
+					return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.initial))}, nil
+				}
+				if calls > tc.wantCalls {
+					t.Fatal("unexpected extra retry")
+				}
+				if string(body) != string(original) || r.Header.Get("TypeSafe-Danger-Zone-Long-Context") != "true" {
+					t.Fatal("retry changed the full payload or omitted the documented header")
+				}
+				if r.Header.Get("Authorization") != "Bearer fixture-key" || r.Header.Get("Content-Type") != "application/json" {
+					t.Fatal("retry changed ordinary transport headers")
+				}
+				status := http.StatusOK
+				if tc.wantError != "" {
+					status = http.StatusBadRequest
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(tc.retry))}, nil
+			})}
+			scores, _, response, err := scoreReasons(client, "https://example.invalid", "fixture-key", map[string]any{"trace": strings.Repeat("full observed work ", 10000)}, []string{"Classify probe health."})
+			if calls != tc.wantCalls || response.LongContext != tc.long {
+				t.Fatalf("calls %d, long context %v", calls, response.LongContext)
+			}
+			if tc.wantError == "" {
+				if err != nil || len(scores) != 1 || scores[0].Fits != .94 || scores[0].Achieved != .85 {
+					t.Fatalf("retry lost scores: %v, %v", scores, err)
+				}
+			} else if err == nil || err.Error() != tc.wantError || scores != nil {
+				t.Fatalf("error = %v, want %q; scores %v", err, tc.wantError, scores)
+			}
+			encoded, _ := json.Marshal(response)
+			if !strings.Contains(string(encoded), `"longContext":`) {
+				t.Fatal("transport provenance missing from retained response")
 			}
 		})
 	}

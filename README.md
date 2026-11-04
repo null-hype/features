@@ -156,6 +156,15 @@ available columns, marks unavailable cells `unverified`, and exits nonzero.
 Input errors fail before rendering; any existing output retains its earlier
 `observedAt` timestamp. Run `xeno heatmap --help` for the command options.
 
+For both `assess` and `heatmap`, a Jev `max_tokens_exceeded` HTTP 400 response
+triggers one retry of the identical full request with TypeSafe's documented
+long-context header. The retained `response.longContext` field records
+whether that retry was requested, including failed retries. Questions,
+trace content, model and thresholds stay the same. Other HTTP errors are
+not retried. TypeSafe documents a 262k-token budget in this mode, with
+slower evaluation and lower accuracy than the default context limits;
+see [Jev context limits](https://docs.typesafe.ai/models#long-context).
+
 ## Boundaries
 
 [worlds](https://github.com/null-hype/worlds) captures delivery evidence;

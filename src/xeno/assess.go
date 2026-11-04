@@ -27,8 +27,9 @@ type reasonScore struct {
 }
 
 type jevResponse struct {
-	Model   string `json:"model"`
-	Answers map[string]struct {
+	Model       string `json:"model"`
+	LongContext bool   `json:"longContext"`
+	Answers     map[string]struct {
 		Noul *float64 `json:"noul"`
 	} `json:"answers"`
 }
@@ -58,23 +59,45 @@ func scoreReasons(client *http.Client, endpoint, key string, state any, reasons 
 	if err != nil {
 		return nil, request, jevResponse{}, err
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, request, jevResponse{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+key)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, request, jevResponse{}, errors.New("Jev request failed")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, request, jevResponse{}, fmt.Errorf("Jev HTTP %d", resp.StatusCode)
-	}
 	var answer jevResponse
-	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&answer) != nil || answer.Model != jevModel {
-		return nil, request, answer, errors.New("invalid Jev response or model")
+	longContext := false
+	for {
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, request, jevResponse{LongContext: longContext}, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key)
+		if longContext {
+			req.Header.Set("TypeSafe-Danger-Zone-Long-Context", "true")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, request, jevResponse{LongContext: longContext}, errors.New("Jev request failed")
+		}
+		if resp.StatusCode != http.StatusOK {
+			errorType := jevErrorType(resp.Body)
+			resp.Body.Close()
+			// Retry the identical full request only when TypeSafe identifies
+			// the default context budget as the reason it could not run.
+			if resp.StatusCode == http.StatusBadRequest && errorType == "max_tokens_exceeded" && !longContext {
+				longContext = true
+				continue
+			}
+			message := fmt.Sprintf("Jev HTTP %d", resp.StatusCode)
+			if errorType != "" {
+				message += " (" + errorType + ")"
+			}
+			return nil, request, jevResponse{LongContext: longContext}, errors.New(message)
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&answer)
+		resp.Body.Close()
+		// Local transport provenance, never trusted from a response field.
+		answer.LongContext = longContext
+		if decodeErr != nil || answer.Model != jevModel {
+			return nil, request, answer, errors.New("invalid Jev response or model")
+		}
+		break
 	}
 	values := map[string]float64{}
 	for name := range questions {
@@ -89,6 +112,29 @@ func scoreReasons(client *http.Client, endpoint, key string, state any, reasons 
 		scores = append(scores, reasonScore{reason, values[fmt.Sprintf("fit%d", i)], values[fmt.Sprintf("achieved%d", i)]})
 	}
 	return scores, request, answer, nil
+}
+
+// Keep service error types useful without copying free-form response text,
+// which may echo input. Only a short machine identifier is safe to retain.
+func jevErrorType(body io.Reader) string {
+	var response struct {
+		Detail struct {
+			ErrorType string `json:"error_type"`
+		} `json:"detail"`
+	}
+	if json.NewDecoder(io.LimitReader(body, 4<<20)).Decode(&response) != nil {
+		return ""
+	}
+	kind := response.Detail.ErrorType
+	if len(kind) == 0 || len(kind) > 64 {
+		return ""
+	}
+	for _, c := range kind {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return ""
+		}
+	}
+	return kind
 }
 
 func reasonStatus(scores []reasonScore) string {
