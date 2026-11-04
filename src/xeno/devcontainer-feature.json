@@ -1,0 +1,11 @@
+{
+    "name": "xeno",
+    "id": "xeno",
+    "version": "1.0.0",
+    "description": "Installs Xeno, Herdr and Proton Pass CLI to collect access evidence for agent runs.",
+    "documentationURL": "https://github.com/null-hype/features/tree/main/src/xeno",
+    "postStartCommand": ["/usr/local/bin/xeno", "init"],
+    "dependsOn": {
+        "ghcr.io/devcontainers/features/go:1": {}
+    }
+}
