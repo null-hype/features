@@ -178,10 +178,13 @@ func traceState(raw []byte) ([]any, int, error) {
 		projection := map[string]any{"type": kind}
 		switch kind {
 		case "user", "assistant":
-			if !json.Valid(e["message"]) {
+			var message any
+			decoder := json.NewDecoder(bytes.NewReader(e["message"]))
+			decoder.UseNumber()
+			if decoder.Decode(&message) != nil {
 				return nil, line, errors.New("Claude message is missing")
 			}
-			projection["message"] = e["message"]
+			projection["message"] = textScorerMedia(message)
 		case "system":
 			var subtype string
 			json.Unmarshal(e["subtype"], &subtype)
@@ -204,6 +207,36 @@ func traceState(raw []byte) ([]any, int, error) {
 		return nil, last, errors.New("Claude trace contains no usable messages")
 	}
 	return events, last, nil
+}
+
+// Jev reads text. Preserve all text and tool activity, replacing structured
+// binary media with an explicit reference, including inside tool results.
+// This only changes the decoded scoring projection, never the native log.
+func textScorerMedia(value any) any {
+	switch v := value.(type) {
+	case []any:
+		for i, item := range v {
+			v[i] = textScorerMedia(item)
+		}
+	case map[string]any:
+		kind, _ := v["type"].(string)
+		switch kind {
+		case "image", "document", "audio", "video":
+			if source, ok := v["source"].(map[string]any); ok && source["type"] == "base64" {
+				if data, ok := source["data"].(string); ok {
+					delete(source, "data")
+					source["type"] = "reference"
+					source["evaluation"] = "binary media not evaluated by text scorer"
+					source["encodedHash"] = contentHash([]byte(data))
+					source["encodedByteLength"] = len(data)
+				}
+			}
+		}
+		for key, item := range v {
+			v[key] = textScorerMedia(item)
+		}
+	}
+	return value
 }
 
 func claudeState(raw []byte, final *string) (map[string]any, int, error) {

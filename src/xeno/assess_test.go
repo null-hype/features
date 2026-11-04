@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -185,6 +186,66 @@ func TestStopBeforeTranscriptFlush(t *testing.T) {
 	explicit, _, err := claudeState(raw, nil)
 	if err != nil || explicit["stop_hook"] != nil {
 		t.Fatal("explicit trace assessment invented a hook response")
+	}
+}
+
+func TestNestedNativeMediaProjection(t *testing.T) {
+	data := strings.Repeat("iVBORw0KGgoAAAANSUhEUg==", 1000)
+	message := map[string]any{
+		"type": "user", "sessionId": "native-id",
+		"message": map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "tool_result", "tool_use_id": "screenshot-call", "content": []any{
+				map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": data}},
+				map[string]any{"type": "text", "text": "Screenshot captured; measured layout has no horizontal overflow."},
+			}},
+		}},
+	}
+	raw, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A tool argument with base64-looking text is substantive tool activity,
+	// not structured media. Preserve it and exact JSON integer values.
+	raw = append(raw, []byte("\n"+`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"layout-check","name":"Bash","input":{"data":"retain tool input","type":"base64","number":9007199254740993}}]}}`)...)
+	original := bytes.Clone(raw)
+	originalHash := contentHash(raw)
+	state, _, err := claudeState(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(data)) || len(encoded) >= len(raw) {
+		t.Fatal("binary media was sent to the text scorer")
+	}
+	for _, required := range []string{"binary media not evaluated by text scorer", "image/png", contentHash([]byte(data)), "Screenshot captured; measured layout has no horizontal overflow.", "screenshot-call", "layout-check", "retain tool input", "9007199254740993"} {
+		if !bytes.Contains(encoded, []byte(required)) {
+			t.Fatalf("projection lost %q", required)
+		}
+	}
+	event := state["trace"].([]any)[0].(map[string]any)
+	content := event["message"].(map[string]any)["content"].([]any)
+	image := content[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+	source := image["source"].(map[string]any)
+	if source["encodedByteLength"] != len(data) || source["type"] != "reference" || source["data"] != nil {
+		t.Fatalf("incomplete media reference: %v", source)
+	}
+	if !bytes.Equal(raw, original) || contentHash(raw) != originalHash {
+		t.Fatal("scoring projection mutated the native trace or its evidence hash")
+	}
+}
+
+func TestMediaProjectionPreservesURLSources(t *testing.T) {
+	raw := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.invalid/screenshot.png"}},{"type":"text","text":"base64 text stays text"}]}}`)
+	state, _, err := claudeState(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(state)
+	if !bytes.Contains(encoded, []byte("https://example.invalid/screenshot.png")) || !bytes.Contains(encoded, []byte("base64 text stays text")) || bytes.Contains(encoded, []byte("encodedHash")) {
+		t.Fatal("non-binary content was changed")
 	}
 }
 

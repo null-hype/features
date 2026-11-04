@@ -156,6 +156,13 @@ available columns, marks unavailable cells `unverified`, and exits nonzero.
 Input errors fail before rendering; any existing output retains its earlier
 `observedAt` timestamp. Run `xeno heatmap --help` for the command options.
 
+Reason assessment is text-only. Native traces can include base64 screenshots
+inside tool results; the scoring projection replaces structured binary media
+with an explicit unevaluated reference, preserving its media type, encoded
+length and hash. Text, tool calls and text results remain intact. The original
+native trace and its evidence hash remain unchanged, so screenshots are
+available for human QA; a reason score does not establish what an image shows.
+
 For both `assess` and `heatmap`, a Jev `max_tokens_exceeded` HTTP 400 response
 triggers one retry of the identical full request with TypeSafe's documented
 long-context header. The retained `response.longContext` field records
