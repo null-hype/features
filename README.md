@@ -27,34 +27,93 @@ The `version` option selects a Witness tag, branch, or full commit SHA
 (default: `v0.1.0`). See the [manifest](src/witness/devcontainer-feature.json)
 and [installer](src/witness/install.sh).
 
-## xeno
+## Xeno
 
-An agent is a process, so "on target" is a property of how the work runs:
-was it run with a positive control and a negative control? xeno is a
-[Herdr](https://herdr.dev) plugin that asks this whenever an agent pane
-becomes `done`.
+Xeno saves Proton Pass agent audit records to `~/.xeno/reasons.json`. The
+records explain why access was requested and can be used as evidence alongside
+a check result.
 
-It reads the Proton Pass agent monitor (`pass-cli agent monitor --output
-json`). Each fetch carries a plain-sentence `PROTON_PASS_AGENT_REASON`; a
-reason starting "positive control" or "negative control" counts as that
-control having run. The pane's done label then reads:
+Add the Xeno feature to your Dev Container and pass a Proton Pass personal
+access token through `remoteEnv`. Set the token in the environment that
+launches Dev Containers.
 
-- `done`: both controls ran
-- `done · uncontrolled`: at least one did not
-- `done · unverified`: the monitor could not be read
-
-Set `XENO_MONITOR` in Herdr's environment to change the monitor command, for
-example to name the agent: `pass-cli agent monitor my-agent --output json`.
-
-Install the feature, or the plugin on its own:
-
-```sh
-herdr plugin install null-hype/features/src/xeno --yes
+```json
+{
+  "remoteEnv": {
+    "PROTON_PASS_PERSONAL_ACCESS_TOKEN": "${localEnv:PROTON_PASS_PERSONAL_ACCESS_TOKEN}"
+  }
+}
 ```
 
-The scenario drives a headless `herdr server` through all three labels, with
-the negative control first. Version 0.1.0 checks that the controls ran, not
-that they discriminated, and does not yet tie monitor records to a pane.
+The feature installs Herdr, Pass CLI, and the `xeno` command. At container
+startup Xeno signs in as the agent if needed and collects its audit records.
+The file may include item and vault names. It is readable only by its owner.
+
+Run `xeno refresh` or invoke **Refresh Xeno access evidence** in Herdr to
+fetch the latest records. A failed refresh preserves the last good file.
+
+For a standalone Herdr install, install Go, Bash, jq and Pass CLI first. The refresh
+action can use a PAT from Herdr's environment or an existing Pass user session.
+For a user session, set `XENO_PASS_AGENT` to the agent's name.
+
+### Assess a Claude thread
+
+Inside the thread's Herdr pane, with `TYPESAFE_API_KEY` resolved in the
+environment, run:
+
+```sh
+xeno assess /path/to/claude-session.jsonl
+```
+
+Xeno refreshes the Pass audit, takes its distinct `ItemRead` reasons, and asks
+Jev whether the trace fits each reason and whether its observed work achieved
+that reason. It uses the existing Noul request format and pinned
+`jev-1.14.0` model. Native Claude transcripts and CLI stream JSONL are supported.
+For streams that omit the prompt, set `XENO_PROMPT_FILE` to its text file.
+
+The pane's idle label and `$xeno_reason` sidebar token show `on-reason`,
+`unfulfilled`, `unmatched`, `uncertain`, or `unverified`. Scores at least 0.8
+support a judgment; scores at most 0.2 reject it; intermediate scores retain
+uncertainty. Multiple supported purposes can coexist. These are model
+judgments over the captured evidence, with no claim of causal attribution or
+release readiness.
+
+Witness reads the result from `.witness/run/findings.json`, or
+`$XENO_RUN_DIR/findings.json`. Its diagnostic lands on the Claude trace and
+links to the retained request, response, scores, and audit records under
+`evidence/reason-assessment.json`. A failed assessment publishes `unverified`
+and exits nonzero. Evidence files are written with owner-only access.
+
+The **Assess Claude thread against Pass reasons** Herdr action reassesses the
+last trace explicitly supplied in that pane, or `XENO_CLAUDE_TRACE` when set.
+Set the resolved TypeSafe key in Herdr's environment before starting its server
+to use that action. The saved pane binding retains the trace and findings paths.
+To assess after Claude finishes, add this command to a Claude `Stop` hook:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "xeno assess --hook" }] }]
+  }
+}
+```
+
+The hook reads Claude's native `transcript_path` and `last_assistant_message`
+from stdin: Claude can flush the final transcript event after the hook finishes.
+A missing final message produces `unverified`; assess the trace explicitly
+after Claude exits for versions without that field. Hook evidence retains the
+hash of the transcript read at that moment, but the diagnostic omits
+`sourceHash` because the live log keeps growing. Explicit trace assessments
+retain the hash check.
+
+The hook requires the same Pass and resolved TypeSafe environment as the
+manual command. Xeno does
+not edit existing Claude settings. Run `xeno clear` to remove its pane metadata
+and diagnostics.
+
+The existing `claim`, `verifier`, `falsifier`, and `jev` commands from the
+lights plugin are also included. Their control verdicts remain distinct from
+reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
 ## Boundaries
 
