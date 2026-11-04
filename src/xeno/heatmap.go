@@ -68,12 +68,23 @@ func auditReasons(raw []byte) ([]string, error) {
 
 func heatmap(args []string) error {
 	flags := flag.NewFlagSet("heatmap", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
+	var help bytes.Buffer
+	flags.SetOutput(&help)
 	positive := flags.String("positive", "", "reason expected to fit at least one selected thread")
 	negative := flags.String("negative", "", "reason expected to fit none of the selected threads")
 	audit := flags.String("reasons", "", "retained Pass monitor JSON; otherwise refresh the signed-in agent")
 	output := flags.String("output", ".witness/run/evidence", "private output directory")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE...")
+		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed Claude JSONL threads.")
+		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.html and reason-heatmap.json.\n\nOptions:")
+		flags.PrintDefaults()
+	}
 	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			fmt.Fprint(os.Stdout, help.String())
+			return nil
+		}
 		return err
 	}
 	if strings.TrimSpace(*positive) == "" || strings.TrimSpace(*negative) == "" || *positive == *negative || flags.NArg() == 0 {

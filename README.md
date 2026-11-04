@@ -115,6 +115,47 @@ The existing `claim`, `verifier`, `falsifier`, and `jev` commands from the
 lights plugin are also included. Their control verdicts remain distinct from
 reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
+### Compare reasons across a Herdr session
+
+Select the session's completed native Claude JSONL traces and compare them
+with the existing Xeno runner. Wait until Claude exits so the native logs
+include the final responses. Supply a resolved `TYPESAFE_API_KEY` as for
+`assess`.
+
+```sh
+xeno heatmap \
+  --positive 'Finish the professional homepage for Richard Anthony.' \
+  --negative 'Deploy a production Kubernetes cluster.' \
+  --output .witness/run/evidence \
+  /path/to/author-thread.jsonl \
+  /path/to/verifier-thread.jsonl \
+  /path/to/falsifier-thread.jsonl
+```
+
+The command refreshes the signed-in Pass identity's audit by default. If
+the session uses distinct Pass agents, retain each agent's
+`pass-cli agent monitor --output json` export, combine their arrays, and
+add `--reasons session-reasons.json` before the trace arguments:
+
+```sh
+umask 077
+jq -s 'add' author-reasons.json verifier-reasons.json falsifier-reasons.json \
+  > session-reasons.json
+```
+
+Open `reason-heatmap.html` in the output directory. Rows are distinct
+`ItemRead` reasons plus the two marked control rows; columns are the traces
+you selected. Cell color and the main number show reason fit, with the
+separate achievement score below it. The positive control expects at least
+one fit at or above 0.8. The negative control expects every fit at or below
+0.2. Control results are `held`, `missed`, or `unverified`.
+
+The adjacent `reason-heatmap.json` retains requests, responses, input paths
+and hashes. Both files are private to their owner. An API failure retains
+available columns, marks unavailable cells `unverified`, and exits nonzero.
+Input errors fail before rendering; any existing output retains its earlier
+`observedAt` timestamp. Run `xeno heatmap --help` for the command options.
+
 ## Boundaries
 
 [worlds](https://github.com/null-hype/worlds) captures delivery evidence;
