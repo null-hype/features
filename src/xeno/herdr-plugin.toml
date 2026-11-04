@@ -1,8 +1,8 @@
 id = "null-hype.xeno"
 name = "xeno"
-version = "0.1.0"
+version = "1.0.0"
 min_herdr_version = "0.9.5"
-description = "Labels a pane whose agent finished without running both a positive and a negative control."
+description = "Collects Proton Pass agent audit evidence."
 platforms = ["linux", "macos"]
 
 # Installed straight from GitHub (herdr plugin install null-hype/features/src/xeno),
@@ -11,6 +11,7 @@ platforms = ["linux", "macos"]
 [[build]]
 command = ["go", "build", "-o", "xeno", "."]
 
-[[events]]
-on = "pane.agent_status_changed"
-command = ["./xeno"]
+[[actions]]
+id = "refresh"
+title = "Refresh Xeno access evidence"
+command = ["./xeno", "refresh"]

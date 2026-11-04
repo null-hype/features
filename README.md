@@ -27,34 +27,34 @@ The `version` option selects a Witness tag, branch, or full commit SHA
 (default: `v0.1.0`). See the [manifest](src/witness/devcontainer-feature.json)
 and [installer](src/witness/install.sh).
 
-## xeno
+## Xeno
 
-An agent is a process, so "on target" is a property of how the work runs:
-was it run with a positive control and a negative control? xeno is a
-[Herdr](https://herdr.dev) plugin that asks this whenever an agent pane
-becomes `done`.
+Xeno saves Proton Pass agent audit records to `~/.xeno/reasons.json`. The
+records explain why access was requested and can be used as evidence alongside
+a check result.
 
-It reads the Proton Pass agent monitor (`pass-cli agent monitor --output
-json`). Each fetch carries a plain-sentence `PROTON_PASS_AGENT_REASON`; a
-reason starting "positive control" or "negative control" counts as that
-control having run. The pane's done label then reads:
+Add the Xeno feature to your Dev Container and pass a Proton Pass personal
+access token through `remoteEnv`. Set the token in the environment that
+launches Dev Containers.
 
-- `done`: both controls ran
-- `done · uncontrolled`: at least one did not
-- `done · unverified`: the monitor could not be read
-
-Set `XENO_MONITOR` in Herdr's environment to change the monitor command, for
-example to name the agent: `pass-cli agent monitor my-agent --output json`.
-
-Install the feature, or the plugin on its own:
-
-```sh
-herdr plugin install null-hype/features/src/xeno --yes
+```json
+{
+  "remoteEnv": {
+    "PROTON_PASS_PERSONAL_ACCESS_TOKEN": "${localEnv:PROTON_PASS_PERSONAL_ACCESS_TOKEN}"
+  }
+}
 ```
 
-The scenario drives a headless `herdr server` through all three labels, with
-the negative control first. Version 0.1.0 checks that the controls ran, not
-that they discriminated, and does not yet tie monitor records to a pane.
+The feature installs Herdr, Pass CLI, and the `xeno` command. At container
+startup Xeno signs in as the agent if needed and collects its audit records.
+The file may include item and vault names. It is readable only by its owner.
+
+Run `xeno refresh` or invoke **Refresh Xeno access evidence** in Herdr to
+fetch the latest records. A failed refresh preserves the last good file.
+
+For a standalone Herdr install, install Go and Pass CLI first. The refresh
+action can use a PAT from Herdr's environment or an existing Pass user session.
+For a user session, set `XENO_PASS_AGENT` to the agent's name.
 
 ## Boundaries
 
