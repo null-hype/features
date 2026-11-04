@@ -28,7 +28,7 @@ fi
 # The plugin is this directory. `herdr plugin link` does not run the
 # manifest's build commands, so build it here.
 mkdir -p "$SHARE"
-cp herdr-plugin.toml go.mod main.go "$SHARE/"
+cp herdr-plugin.toml go.mod main.go assess.go report.sh "$SHARE/"
 GO="$(command -v go || echo /usr/local/go/bin/go)"
 (cd "$SHARE" && CGO_ENABLED=0 "$GO" build -o xeno .)
 ln -sf "$SHARE/xeno" /usr/local/bin/xeno

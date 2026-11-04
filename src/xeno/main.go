@@ -23,8 +23,22 @@ func main() {
 }
 
 func command(args []string) (int, error) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "assess":
+			if err := assess(args[1:]); err != nil {
+				return 1, err
+			}
+			return 0, nil
+		case "claim", "verifier", "falsifier", "jev", "clear":
+			if err := report(args...); err != nil {
+				return 1, err
+			}
+			return 0, nil
+		}
+	}
 	if len(args) != 1 || (args[0] != "init" && args[0] != "refresh") {
-		return 2, errors.New("usage: xeno init | refresh")
+		return 2, errors.New("usage: xeno init | refresh | assess [--hook | TRACE] | claim | verifier | falsifier | jev | clear")
 	}
 	startup := args[0] == "init"
 	if startup && os.Getenv("PROTON_PASS_PERSONAL_ACCESS_TOKEN") == "" {
@@ -38,6 +52,20 @@ func command(args []string) (int, error) {
 		return 1, err
 	}
 	return 0, nil
+}
+
+func report(args ...string) error {
+	bin, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	bin, err = filepath.EvalSymlinks(bin)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("bash", append([]string{filepath.Join(filepath.Dir(bin), "report.sh")}, args...)...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 func refresh() error {

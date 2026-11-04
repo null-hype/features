@@ -52,9 +52,60 @@ The file may include item and vault names. It is readable only by its owner.
 Run `xeno refresh` or invoke **Refresh Xeno access evidence** in Herdr to
 fetch the latest records. A failed refresh preserves the last good file.
 
-For a standalone Herdr install, install Go and Pass CLI first. The refresh
+For a standalone Herdr install, install Go, Bash, jq and Pass CLI first. The refresh
 action can use a PAT from Herdr's environment or an existing Pass user session.
 For a user session, set `XENO_PASS_AGENT` to the agent's name.
+
+### Assess a Claude thread
+
+Inside the thread's Herdr pane, with `TYPESAFE_API_KEY` resolved in the
+environment, run:
+
+```sh
+xeno assess /path/to/claude-session.jsonl
+```
+
+Xeno refreshes the Pass audit, takes its distinct `ItemRead` reasons, and asks
+Jev whether the trace fits each reason and whether its observed work achieved
+that reason. It uses the existing Noul request format and pinned
+`jev-1.14.0` model. Native Claude transcripts and CLI stream JSONL are supported.
+For streams that omit the prompt, set `XENO_PROMPT_FILE` to its text file.
+
+The pane's idle label and `$xeno_reason` sidebar token show `on-reason`,
+`unfulfilled`, `unmatched`, `uncertain`, or `unverified`. Scores at least 0.8
+support a judgment; scores at most 0.2 reject it; intermediate scores retain
+uncertainty. Multiple supported purposes can coexist. These are model
+judgments over the captured evidence, with no claim of causal attribution or
+release readiness.
+
+Witness reads the result from `.witness/run/findings.json`, or
+`$XENO_RUN_DIR/findings.json`. Its diagnostic lands on the Claude trace and
+links to the retained request, response, scores, and audit records under
+`evidence/reason-assessment.json`. A failed assessment publishes `unverified`
+and exits nonzero. Evidence files are written with owner-only access.
+
+The **Assess Claude thread against Pass reasons** Herdr action reassesses the
+last trace explicitly supplied in that pane, or `XENO_CLAUDE_TRACE` when set.
+Set the resolved TypeSafe key in Herdr's environment before starting its server
+to use that action. The saved pane binding retains the trace and findings paths.
+To assess after Claude finishes, add this command to a Claude `Stop` hook:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "xeno assess --hook" }] }]
+  }
+}
+```
+
+The hook reads Claude's native `transcript_path` from stdin. It requires the
+same Pass and resolved TypeSafe environment as the manual command. Xeno does
+not edit existing Claude settings. Run `xeno clear` to remove its pane metadata
+and diagnostics.
+
+The existing `claim`, `verifier`, `falsifier`, and `jev` commands from the
+lights plugin are also included. Their control verdicts remain distinct from
+reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
 ## Boundaries
 

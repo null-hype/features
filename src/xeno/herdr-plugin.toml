@@ -2,7 +2,7 @@ id = "null-hype.xeno"
 name = "xeno"
 version = "1.0.0"
 min_herdr_version = "0.9.5"
-description = "Collects Proton Pass agent audit evidence."
+description = "Collects Pass reasons, assesses Claude threads with Jev, and reports evidence in Herdr and Witness."
 platforms = ["linux", "macos"]
 
 # Installed straight from GitHub (herdr plugin install null-hype/features/src/xeno),
@@ -15,3 +15,15 @@ command = ["go", "build", "-o", "xeno", "."]
 id = "refresh"
 title = "Refresh Xeno access evidence"
 command = ["./xeno", "refresh"]
+
+[[actions]]
+id = "assess"
+title = "Assess Claude thread against Pass reasons"
+contexts = ["pane"]
+command = ["./xeno", "assess"]
+
+[[actions]]
+id = "clear"
+title = "Clear Xeno lights and reason assessment"
+contexts = ["pane"]
+command = ["./xeno", "clear"]
