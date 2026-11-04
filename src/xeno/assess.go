@@ -286,25 +286,11 @@ func assess(args []string) error {
 		if err != nil {
 			return errors.New("cannot read reasons.json; run xeno refresh first")
 		}
-		var audit []struct {
-			Action  string `json:"action"`
-			Payload struct {
-				Reason string `json:"reason"`
-			} `json:"payload"`
-		}
-		if json.Unmarshal(records, &audit) != nil || audit == nil {
-			return errors.New("invalid reasons.json")
+		reasons, err := auditReasons(records)
+		if err != nil {
+			return err
 		}
 		assessment["audit"] = json.RawMessage(records)
-		reasons, seen := []string{}, map[string]bool{}
-		for _, r := range audit {
-			if r.Action == "ItemRead" && strings.TrimSpace(r.Payload.Reason) != "" && !seen[r.Payload.Reason] {
-				reasons, seen[r.Payload.Reason] = append(reasons, r.Payload.Reason), true
-			}
-		}
-		if len(reasons) == 0 {
-			return errors.New("no ItemRead reasons to assess")
-		}
 		key := os.Getenv("TYPESAFE_API_KEY")
 		if key == "" || strings.HasPrefix(key, "pass://") {
 			return errors.New("TYPESAFE_API_KEY must be resolved before assessment")
