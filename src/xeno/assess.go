@@ -160,6 +160,22 @@ func traceState(raw []byte) ([]any, int, error) {
 	return events, last, nil
 }
 
+func claudeState(raw []byte, final *string) (map[string]any, int, error) {
+	trace, line, err := traceState(raw)
+	if err != nil {
+		return nil, line, err
+	}
+	state := map[string]any{"trace": trace}
+	if final != nil {
+		// Claude may flush the final assistant event only after Stop hooks finish.
+		if strings.TrimSpace(*final) == "" {
+			return nil, line, errors.New("Claude Stop hook requires last_assistant_message; assess TRACE after Claude exits instead")
+		}
+		state["stop_hook"] = map[string]string{"last_assistant_message": *final}
+	}
+	return state, line, nil
+}
+
 func assess(args []string) error {
 	pane := os.Getenv("HERDR_PANE_ID")
 	if pane == "" {
@@ -168,9 +184,11 @@ func assess(args []string) error {
 	var hook struct {
 		Transcript string `json:"transcript_path"`
 		Cwd        string `json:"cwd"`
+		Final      string `json:"last_assistant_message"`
 	}
+	isHook := len(args) == 1 && args[0] == "--hook"
 	path := os.Getenv("XENO_CLAUDE_TRACE")
-	if len(args) == 1 && args[0] == "--hook" {
+	if isHook {
 		if json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&hook) != nil || hook.Transcript == "" {
 			return errors.New("Claude hook requires transcript_path")
 		}
@@ -248,7 +266,15 @@ func assess(args []string) error {
 		}
 		sum := sha256.Sum256(raw)
 		sourceHash = "sha256:" + hex.EncodeToString(sum[:])
-		trace, resultLine, err := traceState(raw)
+		assessment["transcriptHash"] = sourceHash
+		var final *string
+		if isHook {
+			final = &hook.Final
+			// The native log continues growing after this hook. Keep the hash
+			// as evidence, rather than treating later appends as stale findings.
+			sourceHash = ""
+		}
+		state, resultLine, err := claudeState(raw, final)
 		line = resultLine
 		if err != nil {
 			return err
@@ -283,7 +309,6 @@ func assess(args []string) error {
 		if key == "" || strings.HasPrefix(key, "pass://") {
 			return errors.New("TYPESAFE_API_KEY must be resolved before assessment")
 		}
-		state := map[string]any{"trace": trace}
 		if promptFile != "" {
 			raw, err := os.ReadFile(promptFile)
 			if err != nil {
@@ -313,11 +338,15 @@ func assess(args []string) error {
 		severity = "info"
 	}
 	assessment["status"] = status
-	assessment["run"] = map[string]any{"version": 1, "findings": []any{map[string]any{
+	finding := map[string]any{
 		"id": "xeno.reason", "location": map[string]any{"file": path, "line": line, "column": 1},
-		"sourceHash": sourceHash, "severity": severity, "message": message,
+		"severity": severity, "message": message,
 		"evidence": []string{"evidence/reason-assessment.json"},
-	}}}
+	}
+	if sourceHash != "" {
+		finding["sourceHash"] = sourceHash
+	}
+	assessment["run"] = map[string]any{"version": 1, "findings": []any{finding}}
 	out, err := json.MarshalIndent(assessment, "", "  ")
 	if err != nil {
 		return err

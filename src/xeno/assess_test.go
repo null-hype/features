@@ -99,6 +99,27 @@ func TestClaudeFormats(t *testing.T) {
 	}
 }
 
+func TestStopBeforeTranscriptFlush(t *testing.T) {
+	raw := []byte(`{"type":"user","message":{"role":"user","content":"Classify catalog HTTP 204; checkout HTTP 503."}}`)
+	final := "catalog: healthy\ncheckout: unhealthy"
+	state, line, err := claudeState(raw, &final)
+	if err != nil || line != 1 {
+		t.Fatalf("hook state: %v", err)
+	}
+	encoded, _ := json.Marshal(state)
+	if !strings.Contains(string(encoded), "checkout: unhealthy") || !strings.Contains(string(encoded), "last_assistant_message") {
+		t.Fatal("Stop hook lost the final response before the transcript flushed")
+	}
+	missing := ""
+	if _, _, err := claudeState(raw, &missing); err == nil {
+		t.Fatal("scored an incomplete hook as an observed outcome")
+	}
+	explicit, _, err := claudeState(raw, nil)
+	if err != nil || explicit["stop_hook"] != nil {
+		t.Fatal("explicit trace assessment invented a hook response")
+	}
+}
+
 func TestRecordedJudgments(t *testing.T) {
 	raw, err := os.ReadFile("../../test/xeno/fixtures/reason-judgments.json")
 	if err != nil {

@@ -98,8 +98,16 @@ To assess after Claude finishes, add this command to a Claude `Stop` hook:
 }
 ```
 
-The hook reads Claude's native `transcript_path` from stdin. It requires the
-same Pass and resolved TypeSafe environment as the manual command. Xeno does
+The hook reads Claude's native `transcript_path` and `last_assistant_message`
+from stdin: Claude can flush the final transcript event after the hook finishes.
+A missing final message produces `unverified`; assess the trace explicitly
+after Claude exits for versions without that field. Hook evidence retains the
+hash of the transcript read at that moment, but the diagnostic omits
+`sourceHash` because the live log keeps growing. Explicit trace assessments
+retain the hash check.
+
+The hook requires the same Pass and resolved TypeSafe environment as the
+manual command. Xeno does
 not edit existing Claude settings. Run `xeno clear` to remove its pane metadata
 and diagnostics.
 
