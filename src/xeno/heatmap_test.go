@@ -144,3 +144,75 @@ func TestAuditReasonsRejectsAbsentReads(t *testing.T) {
 		}
 	}
 }
+
+func writeSinkThread(t *testing.T, dir, name string, sessions ...string) string {
+	t.Helper()
+	span := func(start, session, prompt string) string {
+		attrs := fmt.Sprintf(`{"key":"session.id","value":{"stringValue":%q}},{"key":"gen_ai.request.model","value":{"stringValue":"m"}}`, session)
+		if prompt != "" {
+			attrs += fmt.Sprintf(`,{"key":"gen_ai.prompt","value":{"stringValue":%q}},{"key":"gen_ai.completion","value":{"stringValue":"reply to %s"}}`, prompt, prompt)
+		}
+		return fmt.Sprintf(`{"startTimeUnixNano":%q,"attributes":[%s]}`, start, attrs)
+	}
+	lines := []string{
+		fmt.Sprintf(`{"resourceSpans":[{"scopeSpans":[{"spans":[%s,%s]}]}]}`, span("20", sessions[0], "second call"), span("15", sessions[0], "")),
+		fmt.Sprintf(`{"resourceSpans":[{"scopeSpans":[{"spans":[%s]}]}]}`, span("10", sessions[len(sessions)-1], "first call")),
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// An OpenRouter agent's thread is its session file in the toolbox's trace
+// sink: its model calls in start order, with spans that carry no call left out.
+func TestHeatmapReadsTraceSinkSessions(t *testing.T) {
+	audit, _ := heatmapInputs(t)
+	dir := t.TempDir()
+	path := writeSinkThread(t, dir, "sess.ndjson", "sess-1")
+	raw, _ := os.ReadFile(path)
+	if !isSinkThread(raw) {
+		t.Fatal("sink file not recognised")
+	}
+	state, session, err := sinkThread(raw)
+	if err != nil || session != "sess-1" {
+		t.Fatalf("session %q, err %v", session, err)
+	}
+	trace := state["trace"].([]any)
+	if len(trace) != 2 || trace[0].(map[string]any)["prompt"] != "first call" || trace[1].(map[string]any)["prompt"] != "second call" {
+		t.Fatalf("calls not in start order, or a span without a call kept: %+v", trace)
+	}
+	if _, _, err := sinkThread(func() []byte {
+		b, _ := os.ReadFile(writeSinkThread(t, dir, "mixed.ndjson", "sess-1", "sess-2"))
+		return b
+	}()); err == nil {
+		t.Fatal("a file holding two sessions was accepted as one thread")
+	}
+
+	client := &http.Client{Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			State     json.RawMessage            `json:"state"`
+			Questions map[string]json.RawMessage `json:"questions"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body.State), "sess-1") || !strings.Contains(string(body.State), "first call") {
+			t.Fatalf("sink state: %s", body.State)
+		}
+		answers := map[string]any{}
+		for q := range body.Questions {
+			answers[q] = map[string]float64{"noul": .5}
+		}
+		raw, _ := json.Marshal(map[string]any{"model": jevModel, "answers": answers})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(raw)))}, nil
+	})}
+	evidence, err := scoreHeatmap(client, "https://example.invalid", "fixture", audit, []string{path}, "Classify health", "Deploy a payment gateway")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evidence.Threads) != 1 || evidence.Threads[0].Session != "sess-1" || len(evidence.Threads[0].Scores) != 3 {
+		t.Fatalf("sink thread: %+v", evidence.Threads)
+	}
+}

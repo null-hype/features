@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -76,7 +79,7 @@ func heatmap(args []string) error {
 	output := flags.String("output", ".witness/run/evidence", "private output directory")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE...")
-		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed Claude JSONL threads.")
+		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed threads: Claude JSONL, or OpenRouter trace sink session files.")
 		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.html and reason-heatmap.json.\n\nOptions:")
 		flags.PrintDefaults()
 	}
@@ -178,11 +181,13 @@ func scoreHeatmap(client *http.Client, endpoint, key, auditPath string, paths []
 		if err != nil {
 			return evidence, errors.New("cannot read Claude trace")
 		}
-		state, _, err := claudeState(raw, nil)
-		if err != nil {
-			return evidence, err
+		var state map[string]any
+		var session string
+		if isSinkThread(raw) {
+			state, session, err = sinkThread(raw)
+		} else if state, _, err = claudeState(raw, nil); err == nil {
+			session, err = traceSession(raw)
 		}
-		session, err := traceSession(raw)
 		if err != nil {
 			return evidence, err
 		}
@@ -205,6 +210,84 @@ func scoreHeatmap(client *http.Client, endpoint, key, auditPath string, paths []
 	evidence.PositiveControl = heatmapControl(evidence.Threads, positive, true)
 	evidence.NegativeControl = heatmapControl(evidence.Threads, negative, false)
 	return evidence, nil
+}
+
+// A session file from the toolbox's OpenRouter trace sink, one OTLP payload
+// per line (agent-plugins toolbox/traces.go), is the OpenRouter agent's
+// thread: each model call's prompt and completion, in the order they started.
+func isSinkThread(raw []byte) bool {
+	line, _, _ := bytes.Cut(bytes.TrimSpace(raw), []byte("\n"))
+	var p struct {
+		ResourceSpans json.RawMessage `json:"resourceSpans"`
+	}
+	return json.Unmarshal(line, &p) == nil && len(p.ResourceSpans) > 0
+}
+
+func sinkThread(raw []byte) (map[string]any, string, error) {
+	type call struct {
+		start uint64
+		event map[string]any
+	}
+	var calls []call
+	session := ""
+	scan := bufio.NewScanner(bytes.NewReader(raw))
+	scan.Buffer(make([]byte, 4096), 32<<20)
+	for scan.Scan() {
+		var p struct {
+			ResourceSpans []struct {
+				ScopeSpans []struct {
+					Spans []struct {
+						Start      string `json:"startTimeUnixNano"`
+						Attributes []struct {
+							Key   string `json:"key"`
+							Value struct {
+								String string `json:"stringValue"`
+							} `json:"value"`
+						} `json:"attributes"`
+					} `json:"spans"`
+				} `json:"scopeSpans"`
+			} `json:"resourceSpans"`
+		}
+		if json.Unmarshal(scan.Bytes(), &p) != nil {
+			return nil, "", errors.New("invalid trace sink file")
+		}
+		for _, rs := range p.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				for _, s := range ss.Spans {
+					a := map[string]string{}
+					for _, attr := range s.Attributes {
+						a[attr.Key] = attr.Value.String
+					}
+					if a["gen_ai.prompt"] == "" && a["gen_ai.completion"] == "" {
+						continue
+					}
+					if id := a["session.id"]; id != "" {
+						if session != "" && id != session {
+							return nil, "", errors.New("trace sink file contains more than one thread")
+						}
+						session = id
+					}
+					start, _ := strconv.ParseUint(s.Start, 10, 64)
+					calls = append(calls, call{start, map[string]any{
+						"type": "model_call", "model": a["gen_ai.request.model"],
+						"prompt": a["gen_ai.prompt"], "completion": a["gen_ai.completion"],
+					}})
+				}
+			}
+		}
+	}
+	if err := scan.Err(); err != nil {
+		return nil, "", errors.New("trace sink line exceeds limit or cannot be read")
+	}
+	if len(calls) == 0 {
+		return nil, "", errors.New("trace sink file contains no model calls")
+	}
+	sort.SliceStable(calls, func(i, j int) bool { return calls[i].start < calls[j].start })
+	trace := make([]any, len(calls))
+	for i, c := range calls {
+		trace[i] = c.event
+	}
+	return map[string]any{"trace": trace}, session, nil
 }
 
 func contentHash(raw []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(raw)) }

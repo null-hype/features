@@ -98,5 +98,8 @@ produce `unverified` cells and a nonzero exit, while retaining available results
 
 The adjacent private `reason-heatmap.json` retains exact requests/responses,
 trace paths and hashes, and the audit hash. Control expectations are not sent
-as model state. This command does not infer thread membership or project
+as model state. A thread may also be an OpenRouter agent's session file from the
+agent-plugins toolbox trace sink (`GET /openrouter/traces/<session>`, one OTLP
+payload per line). Its model calls, prompt and completion, are the thread, in
+start order. This command does not infer thread membership or project
 completion, change Herdr pane verdicts, or publish anything.
