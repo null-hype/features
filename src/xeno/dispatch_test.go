@@ -110,7 +110,8 @@ func TestSessionPassesReasonAndPromptAsData(t *testing.T) {
 	cmd := session(i, "claude.env")
 
 	want := []string{"pass-cli", "run", "--env-file", "claude.env", "--",
-		"claude", "-p", i.Description, "--output-format", "stream-json", "--verbose"}
+		"claude", "--model", "sonnet", "--advisor", "opus", "--effort", "medium",
+		"-p", i.Description, "--output-format", "stream-json", "--verbose"}
 	if !reflect.DeepEqual(cmd.Args, want) {
 		t.Fatalf("args = %q", cmd.Args)
 	}
