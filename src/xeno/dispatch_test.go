@@ -66,7 +66,7 @@ func TestFetchProjectSendsKeyAndProject(t *testing.T) {
 			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
 		}
 		var req struct {
-			Query     string            `json:"query"`
+			Query     string         `json:"query"`
 			Variables map[string]any `json:"variables"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Variables["id"] != "P-CIT-10" || req.Query != projectQuery {
