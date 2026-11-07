@@ -172,23 +172,16 @@ not retried. TypeSafe documents a 262k-token budget in this mode, with
 slower evaluation and lower accuracy than the default context limits;
 see [Jev context limits](https://docs.typesafe.ai/models#long-context).
 
-### Dispatch a Linear project's frontier
-
-From a Herdr pane, with `LINEAR_API_KEY` resolved:
+### List a Linear project's frontier
 
 ```sh
-xeno dispatch --project P-CIT-10 --dry-run   # list what would start
-xeno dispatch --project P-CIT-10 --env-file claude.env
+pass-cli run --env-file linear.env -- xeno frontier --project P-CIT-10
 ```
 
-`dispatch` reads the project's issues and opens a Herdr tab named for the
-project, with one pane per frontier issue: every issue nobody has started
-whose blockers are all completed. Each pane is labelled with its issue and runs
-`pass-cli run --env-file FILE -- claude --model sonnet --advisor opus --effort medium -- DESCRIPTION`,
-with the issue's title as `PROTON_PASS_AGENT_REASON`. Title and description
-are passed as arguments, never through a shell. Each session's transcript is
-kept in `~/.claude` as usual. The Herdr action reads the project from
-`XENO_LINEAR_PROJECT`.
+With `LINEAR_API_KEY` resolved, `frontier` prints the identifier and title of
+every issue in the project that nobody has started and whose blockers are all
+completed, one per line. A canceled blocker still blocks. The list is what a
+dispatching agent starts, one Claude per issue; it decides nothing else.
 
 ## Boundaries
 

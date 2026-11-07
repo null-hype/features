@@ -25,8 +25,8 @@ func main() {
 func command(args []string) (int, error) {
 	if len(args) > 0 {
 		switch args[0] {
-		case "dispatch":
-			if err := dispatch(args[1:]); err != nil {
+		case "frontier":
+			if err := frontierCommand(args[1:]); err != nil {
 				return 1, err
 			}
 			return 0, nil
@@ -48,7 +48,7 @@ func command(args []string) (int, error) {
 		}
 	}
 	if len(args) != 1 || (args[0] != "init" && args[0] != "refresh") {
-		return 2, errors.New("usage: xeno init | refresh | dispatch --project PROJECT [--env-file FILE] [--output DIR] [--dry-run] | assess [--hook | TRACE] | heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE... | claim | verifier | falsifier | jev | clear")
+		return 2, errors.New("usage: xeno init | refresh | frontier --project PROJECT | assess [--hook | TRACE] | heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE... | claim | verifier | falsifier | jev | clear")
 	}
 	startup := args[0] == "init"
 	if startup && os.Getenv("PROTON_PASS_PERSONAL_ACCESS_TOKEN") == "" {
