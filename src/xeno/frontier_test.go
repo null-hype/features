@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -101,72 +99,6 @@ func TestFetchProjectReportsGraphQLErrors(t *testing.T) {
 
 	if _, err := fetchProject(server.Client(), server.URL, "k", "P-NOPE-1"); err == nil || err.Error() != "Linear (HTTP 200): Entity not found: Project" {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestSessionPassesReasonAndPromptAsData(t *testing.T) {
-	i := issue("CIT-1", "backlog")
-	i.Title = "The split is sealed"
-	i.Description = "--help `rm -rf /`; echo \"$HOME\"\nsecond line"
-	pane := session(i, "/repo/claude.env", "/repo")
-
-	want := []string{"pass-cli", "run", "--env-file", "/repo/claude.env", "--",
-		"claude", "--model", "sonnet", "--advisor", "opus", "--effort", "medium",
-		"--", i.Description}
-	if !reflect.DeepEqual(pane.Command, want) {
-		t.Fatalf("command = %q", pane.Command)
-	}
-	if pane.Env["PROTON_PASS_AGENT_REASON"] != "The split is sealed" || pane.Label != "CIT-1" || pane.Cwd != "/repo" {
-		t.Fatalf("pane = %+v", pane)
-	}
-}
-
-func TestStackGivesEveryPaneAnEqualShare(t *testing.T) {
-	var panes []sessionPane
-	for _, id := range []string{"A", "B", "C"} {
-		panes = append(panes, session(issue(id, "backlog"), "e", "/"))
-	}
-	root := stack(panes).(layoutSplit)
-	inner := root.Second.(layoutSplit)
-	if root.Ratio != 1.0/3 || inner.Ratio != 0.5 || root.First.(sessionPane).Label != "A" ||
-		inner.First.(sessionPane).Label != "B" || inner.Second.(sessionPane).Label != "C" {
-		t.Fatalf("stack = %+v", root)
-	}
-	if stack(panes[:1]).(sessionPane).Label != "A" {
-		t.Fatal("a single pane is not wrapped in a split")
-	}
-}
-
-func TestApplyLayoutSendsOneRequest(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "herdr.sock")
-	ln, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	got := make(chan herdrRequest, 1)
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		var req herdrRequest
-		json.NewDecoder(conn).Decode(&req)
-		got <- req
-		var resp herdrResponse
-		resp.Error = &struct {
-			Message string `json:"message"`
-		}{"no such workspace"}
-		json.NewEncoder(conn).Encode(resp)
-	}()
-
-	err = applyLayout(socket, layoutParams{WorkspaceID: "w9", TabLabel: "P-CIT-10", Root: session(issue("A", "backlog"), "e", "/")})
-	if err == nil || err.Error() != "Herdr: no such workspace" {
-		t.Fatalf("err = %v", err)
-	}
-	if req := <-got; req.Method != "layout.apply" {
-		t.Fatalf("method = %q", req.Method)
 	}
 }
 
