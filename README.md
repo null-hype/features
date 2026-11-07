@@ -172,6 +172,17 @@ not retried. TypeSafe documents a 262k-token budget in this mode, with
 slower evaluation and lower accuracy than the default context limits;
 see [Jev context limits](https://docs.typesafe.ai/models#long-context).
 
+### List a Linear project's frontier
+
+```sh
+pass-cli run --env-file linear.env -- xeno frontier --project P-CIT-10
+```
+
+With `LINEAR_API_KEY` resolved, `frontier` prints the identifier and title of
+every issue in the project that nobody has started and whose blockers are all
+completed, one per line. A canceled blocker still blocks. The list is what a
+dispatching agent starts, one Claude per issue; it decides nothing else.
+
 ## Boundaries
 
 [worlds](https://github.com/null-hype/worlds) captures delivery evidence;
