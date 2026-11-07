@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -156,7 +155,7 @@ func frontier(issues []linearIssue) []linearIssue {
 func session(issue linearIssue, envFile string) *exec.Cmd {
 	cmd := exec.Command("pass-cli", "run", "--env-file", envFile, "--",
 		"claude", "--model", "sonnet", "--advisor", "opus", "--effort", "medium",
-		"-p", issue.Description, "--output-format", "stream-json", "--verbose")
+		"-p", issue.Description)
 	cmd.Env = append(os.Environ(), "PROTON_PASS_AGENT_REASON="+issue.Title)
 	return cmd
 }
@@ -165,13 +164,12 @@ func dispatch(args []string) error {
 	flags := flag.NewFlagSet("dispatch", flag.ContinueOnError)
 	project := flags.String("project", os.Getenv("XENO_LINEAR_PROJECT"), "Linear project ID, identifier or slug")
 	envFile := flags.String("env-file", "claude.env", "env file for pass-cli run")
-	output := flags.String("output", ".xeno/dispatch", "directory for each issue's Claude stream")
 	dryRun := flags.Bool("dry-run", false, "list the frontier without starting Claude")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *project == "" || flags.NArg() != 0 {
-		return errors.New("usage: xeno dispatch --project PROJECT [--env-file FILE] [--output DIR] [--dry-run]")
+		return errors.New("usage: xeno dispatch --project PROJECT [--env-file FILE] [--dry-run]")
 	}
 	key := os.Getenv("LINEAR_API_KEY")
 	if key == "" {
@@ -188,37 +186,19 @@ func dispatch(args []string) error {
 		}
 		return nil
 	}
-	if err := os.MkdirAll(*output, 0700); err != nil {
-		return err
-	}
-
+	// Claude keeps each session's transcript in ~/.claude as usual.
 	var wg sync.WaitGroup
 	errs := make([]error, len(ready))
 	for i, issue := range ready {
-		trace := filepath.Join(*output, issue.Identifier+".jsonl")
-		stdout, err := os.Create(trace)
-		if err != nil {
-			return err
-		}
-		stderr, err := os.Create(filepath.Join(*output, issue.Identifier+".log"))
-		if err != nil {
-			stdout.Close()
-			return err
-		}
 		cmd := session(issue, *envFile)
-		cmd.Stdout, cmd.Stderr = stdout, stderr
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Start(); err != nil {
-			stdout.Close()
-			stderr.Close()
 			errs[i] = fmt.Errorf("%s: %w", issue.Identifier, err)
 			continue
 		}
-		fmt.Printf("%s\t%s\n", issue.Identifier, trace)
 		wg.Add(1)
 		go func(i int, id string) {
 			defer wg.Done()
-			defer stdout.Close()
-			defer stderr.Close()
 			if err := cmd.Wait(); err != nil {
 				errs[i] = fmt.Errorf("%s: %w", id, err)
 			}
