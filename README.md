@@ -172,6 +172,23 @@ not retried. TypeSafe documents a 262k-token budget in this mode, with
 slower evaluation and lower accuracy than the default context limits;
 see [Jev context limits](https://docs.typesafe.ai/models#long-context).
 
+### Dispatch a Linear project's frontier
+
+```sh
+xeno dispatch --project P-CIT-10 --dry-run   # list what would start
+xeno dispatch --project P-CIT-10 --env-file claude.env
+```
+
+With `LINEAR_API_KEY` resolved, `dispatch` reads the project's issues and
+starts one headless Claude per frontier issue, in parallel: every issue
+nobody has started whose blockers are all completed. Each runs as
+`pass-cli run --env-file FILE -- claude -p DESCRIPTION`, with the issue's
+title as `PROTON_PASS_AGENT_REASON`. Title and description are passed as
+arguments, never through a shell. Each Claude's stream goes to
+`.xeno/dispatch/ISSUE.jsonl`, a trace `heatmap` reads directly, so the reasons
+dispatch sets are the ones the heat map scores. The Herdr action reads the
+project from `XENO_LINEAR_PROJECT`.
+
 ## Boundaries
 
 [worlds](https://github.com/null-hype/worlds) captures delivery evidence;

@@ -27,3 +27,8 @@ id = "clear"
 title = "Clear Xeno lights and reason assessment"
 contexts = ["pane"]
 command = ["./xeno", "clear"]
+
+[[actions]]
+id = "dispatch"
+title = "Dispatch a Claude for each ready Linear issue"
+command = ["./xeno", "dispatch"]
