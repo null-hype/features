@@ -146,30 +146,17 @@ func TestFetchProjectAuthorization(t *testing.T) {
 	}
 }
 
-func TestFetchProjectFollowsPages(t *testing.T) {
-	all := preregistrationProject()
+func TestFetchProjectRefusesAPartialProject(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Variables map[string]any `json:"variables"`
-		}
-		json.NewDecoder(r.Body).Decode(&req)
 		var resp linearResponse
 		resp.Data.Project = &linearProject{}
-		if req.Variables["after"] == nil {
-			resp.Data.Project.Issues.Nodes = all[:5]
-			resp.Data.Project.Issues.PageInfo = linearPageInfo{HasNextPage: true, EndCursor: "c5"}
-		} else if req.Variables["after"] == "c5" {
-			resp.Data.Project.Issues.Nodes = all[5:]
-		}
+		resp.Data.Project.Issues.Nodes = preregistrationProject()
+		resp.Data.Project.Issues.PageInfo.HasNextPage = true
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	issues, err := fetchProject(server.Client(), server.URL, "k", "P-CIT-10")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(identifiers(issues), identifiers(all)) {
-		t.Fatalf("issues = %v", identifiers(issues))
+	if _, err := fetchProject(server.Client(), server.URL, "k", "P-CIT-10"); err == nil {
+		t.Fatal("a partial project was accepted")
 	}
 }
