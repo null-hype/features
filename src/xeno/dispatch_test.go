@@ -67,7 +67,7 @@ func TestFetchProjectSendsKeyAndProject(t *testing.T) {
 		}
 		var req struct {
 			Query     string            `json:"query"`
-			Variables map[string]string `json:"variables"`
+			Variables map[string]any `json:"variables"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Variables["id"] != "P-CIT-10" || req.Query != projectQuery {
 			t.Errorf("request = %+v, %v", req, err)
@@ -143,5 +143,33 @@ func TestFetchProjectAuthorization(t *testing.T) {
 		if err == nil || err.Error() != "Linear (HTTP 401): Authentication required, not authenticated" {
 			t.Errorf("err = %v", err)
 		}
+	}
+}
+
+func TestFetchProjectFollowsPages(t *testing.T) {
+	all := preregistrationProject()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Variables map[string]any `json:"variables"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		var resp linearResponse
+		resp.Data.Project = &linearProject{}
+		if req.Variables["after"] == nil {
+			resp.Data.Project.Issues.Nodes = all[:5]
+			resp.Data.Project.Issues.PageInfo = linearPageInfo{HasNextPage: true, EndCursor: "c5"}
+		} else if req.Variables["after"] == "c5" {
+			resp.Data.Project.Issues.Nodes = all[5:]
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	issues, err := fetchProject(server.Client(), server.URL, "k", "P-CIT-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(identifiers(issues), identifiers(all)) {
+		t.Fatalf("issues = %v", identifiers(issues))
 	}
 }
