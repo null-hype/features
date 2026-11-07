@@ -185,9 +185,8 @@ nobody has started whose blockers are all completed. Each runs as
 `pass-cli run --env-file FILE -- claude --model sonnet --advisor opus --effort medium -p DESCRIPTION`,
 with the issue's
 title as `PROTON_PASS_AGENT_REASON`. Title and description are passed as
-arguments, never through a shell. Each Claude's stream goes to
-`.xeno/dispatch/ISSUE.jsonl`, a trace `heatmap` reads directly, so the reasons
-dispatch sets are the ones the heat map scores. The Herdr action reads the
+arguments, never through a shell. Each session's transcript is kept in
+`~/.claude` as usual. The Herdr action reads the
 project from `XENO_LINEAR_PROJECT`.
 
 ## Boundaries
