@@ -136,7 +136,8 @@ func frontier(issues []linearIssue) []linearIssue {
 // prompt. Both travel as data, never through a shell.
 func session(issue linearIssue, envFile string) *exec.Cmd {
 	cmd := exec.Command("pass-cli", "run", "--env-file", envFile, "--",
-		"claude", "-p", issue.Description, "--output-format", "stream-json", "--verbose")
+		"claude", "--model", "sonnet", "--advisor", "opus", "--effort", "medium",
+		"-p", issue.Description, "--output-format", "stream-json", "--verbose")
 	cmd.Env = append(os.Environ(), "PROTON_PASS_AGENT_REASON="+issue.Title)
 	return cmd
 }
