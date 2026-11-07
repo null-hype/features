@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -82,6 +83,11 @@ func fetchProject(client *http.Client, endpoint, key, project string) ([]linearI
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Personal API keys go bare; OAuth access tokens need a Bearer prefix.
+	key = strings.TrimSpace(key)
+	if strings.HasPrefix(key, "lin_oauth_") {
+		key = "Bearer " + key
+	}
 	req.Header.Set("Authorization", key)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -92,15 +98,16 @@ func fetchProject(client *http.Client, endpoint, key, project string) ([]linearI
 	if err != nil {
 		return nil, err
 	}
+	var out linearResponse
+	parseErr := json.Unmarshal(raw, &out)
+	if parseErr == nil && len(out.Errors) > 0 {
+		return nil, fmt.Errorf("Linear (HTTP %d): %s", resp.StatusCode, out.Errors[0].Message)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Linear returned HTTP %d", resp.StatusCode)
 	}
-	var out linearResponse
-	if err := json.Unmarshal(raw, &out); err != nil {
+	if parseErr != nil {
 		return nil, errors.New("Linear response is not GraphQL JSON")
-	}
-	if len(out.Errors) > 0 {
-		return nil, fmt.Errorf("Linear: %s", out.Errors[0].Message)
 	}
 	if out.Data.Project == nil {
 		return nil, fmt.Errorf("Linear project %q not found", project)

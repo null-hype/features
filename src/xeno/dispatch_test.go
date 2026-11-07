@@ -98,7 +98,7 @@ func TestFetchProjectReportsGraphQLErrors(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := fetchProject(server.Client(), server.URL, "k", "P-NOPE-1"); err == nil || err.Error() != "Linear: Entity not found: Project" {
+	if _, err := fetchProject(server.Client(), server.URL, "k", "P-NOPE-1"); err == nil || err.Error() != "Linear (HTTP 200): Entity not found: Project" {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -117,5 +117,31 @@ func TestSessionPassesReasonAndPromptAsData(t *testing.T) {
 	}
 	if !slices.Contains(cmd.Env, "PROTON_PASS_AGENT_REASON=The split is sealed") {
 		t.Fatal("reason missing from env")
+	}
+}
+
+func TestFetchProjectAuthorization(t *testing.T) {
+	for key, want := range map[string]string{
+		"lin_api_abc\n": "lin_api_abc",
+		"lin_oauth_abc": "Bearer lin_oauth_abc",
+	} {
+		var got string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusUnauthorized)
+			var resp linearResponse
+			resp.Errors = append(resp.Errors, struct {
+				Message string `json:"message"`
+			}{"Authentication required, not authenticated"})
+			json.NewEncoder(w).Encode(resp)
+		}))
+		_, err := fetchProject(server.Client(), server.URL, key, "P-CIT-10")
+		server.Close()
+		if got != want {
+			t.Errorf("key %q sent as %q, want %q", key, got, want)
+		}
+		if err == nil || err.Error() != "Linear (HTTP 401): Authentication required, not authenticated" {
+			t.Errorf("err = %v", err)
+		}
 	}
 }
