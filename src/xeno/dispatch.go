@@ -20,16 +20,16 @@ const linearEndpoint = "https://api.linear.app/graphql"
 
 // Blockers are the issues on the other end of "blocks" relations that point
 // at this issue, wherever those issues live.
-// Linear prices a query by its page sizes multiplied together, so issues come
-// in pages small enough to stay under its complexity limit.
-const projectQuery = `query($id: String!, $after: String) {
+// Linear prices a query by its page sizes multiplied together; one page of 50
+// issues with 10 relations each fits one project and stays under the limit.
+const projectQuery = `query($id: String!) {
   project(id: $id) {
-    issues(first: 50, after: $after) {
+    issues(first: 50) {
       pageInfo { hasNextPage endCursor }
       nodes {
         identifier title description
         state { type }
-        inverseRelations(first: 20) {
+        inverseRelations(first: 10) {
           nodes { type issue { identifier state { type } } }
         }
       }
@@ -83,27 +83,7 @@ type linearResponse struct {
 }
 
 func fetchProject(client *http.Client, endpoint, key, project string) ([]linearIssue, error) {
-	var issues []linearIssue
-	after := ""
-	for {
-		page, err := fetchPage(client, endpoint, key, project, after)
-		if err != nil {
-			return nil, err
-		}
-		issues = append(issues, page.Issues.Nodes...)
-		if !page.Issues.PageInfo.HasNextPage {
-			return issues, nil
-		}
-		after = page.Issues.PageInfo.EndCursor
-	}
-}
-
-func fetchPage(client *http.Client, endpoint, key, project, after string) (*linearProject, error) {
-	variables := map[string]any{"id": project}
-	if after != "" {
-		variables["after"] = after
-	}
-	body, err := json.Marshal(map[string]any{"query": projectQuery, "variables": variables})
+	body, err := json.Marshal(map[string]any{"query": projectQuery, "variables": map[string]string{"id": project}})
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +121,10 @@ func fetchPage(client *http.Client, endpoint, key, project, after string) (*line
 	if out.Data.Project == nil {
 		return nil, fmt.Errorf("Linear project %q not found", project)
 	}
-	return out.Data.Project, nil
+	if out.Data.Project.Issues.PageInfo.HasNextPage {
+		return nil, fmt.Errorf("Linear project %q has more than 50 issues", project)
+	}
+	return out.Data.Project.Issues.Nodes, nil
 }
 
 // The frontier is every issue nobody has started whose blockers are all
