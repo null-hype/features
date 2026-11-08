@@ -145,15 +145,15 @@ jq -s 'add' author-reasons.json verifier-reasons.json falsifier-reasons.json \
   > session-reasons.json
 ```
 
-Open `reason-heatmap.html` in the output directory. Rows are distinct
-`ItemRead` reasons plus the two marked control rows; columns are the traces
-you selected. Cell color and the main number show reason fit, with the
-separate achievement score below it. The positive control expects at least
-one fit at or above 0.8. The negative control expects every fit at or below
-0.2. Control results are `held`, `missed`, or `unverified`.
+The matrix is written to `reason-heatmap.json` in the output directory, for a
+report to render: rows are distinct `ItemRead` reasons plus the two marked
+control rows, columns are the traces you selected, and each cell holds the
+reason fit and the separate achievement score. The positive control expects
+at least one fit at or above 0.8. The negative control expects every fit at
+or below 0.2. Control results are `held`, `missed`, or `unverified`.
 
-The adjacent `reason-heatmap.json` retains requests, responses, input paths
-and hashes. Both files are private to their owner. An API failure retains
+It also retains requests, responses, input paths and hashes, and is private
+to its owner. An API failure retains
 available columns, marks unavailable cells `unverified`, and exits nonzero.
 Input errors fail before rendering; any existing output retains its earlier
 `observedAt` timestamp. Run `xeno heatmap --help` for the command options.

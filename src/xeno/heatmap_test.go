@@ -74,17 +74,10 @@ func TestHeatmapScoresEveryThreadWithExistingQuestions(t *testing.T) {
 	if err := writeHeatmap(out, evidence); err != nil {
 		t.Fatal(err)
 	}
-	html, err := os.ReadFile(filepath.Join(out, "reason-heatmap.html"))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Join(out, "reason-heatmap.html")); !os.IsNotExist(err) {
+		t.Fatal("xeno wrote its own HTML heat map; the report renders the evidence")
 	}
-	if strings.Contains(string(html), "Redact <secret>") || !strings.Contains(string(html), "Redact &lt;secret&gt;") {
-		t.Fatal("unescaped reason in HTML")
-	}
-	if !strings.Contains(string(html), "0.94") || !strings.Contains(string(html), "positive control") {
-		t.Fatal("scores or control source missing")
-	}
-	for _, name := range []string{"reason-heatmap.html", "reason-heatmap.json"} {
+	for _, name := range []string{"reason-heatmap.json"} {
 		info, err := os.Stat(filepath.Join(out, name))
 		if err != nil {
 			t.Fatal(err)

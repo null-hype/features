@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -80,7 +79,7 @@ func heatmap(args []string) error {
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE...")
 		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed threads: Claude JSONL, OpenRouter trace sink session files, or version 3 agent session files (as yoars runs keep).")
-		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.html and reason-heatmap.json.\n\nOptions:")
+		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.json; a report renders the matrix from it.\n\nOptions:")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -118,7 +117,7 @@ func heatmap(args []string) error {
 	if err := writeHeatmap(*output, evidence); err != nil {
 		return err
 	}
-	fmt.Println(filepath.Join(*output, "reason-heatmap.html"))
+	fmt.Println(filepath.Join(*output, "reason-heatmap.json"))
 	for _, thread := range evidence.Threads {
 		if thread.Error != "" {
 			return errors.New("heat map includes unverified threads; inspect reason-heatmap.json")
@@ -427,45 +426,7 @@ func writeHeatmap(dir string, evidence heatmapEvidence) error {
 	if err != nil {
 		return err
 	}
-	if err := atomicWrite(filepath.Join(dir, "reason-heatmap.json"), append(data, '\n')); err != nil {
-		return err
-	}
-	tmpl, err := template.New("heatmap").Funcs(template.FuncMap{
-		"name": func(t heatmapThread) string {
-			if t.Session != "" {
-				return t.Session
-			}
-			return filepath.Base(t.Trace)
-		},
-		"cell": func(t heatmapThread, reason string) *reasonScore {
-			if t.Error != "" {
-				return nil
-			}
-			for _, s := range t.Scores {
-				if s.Reason == reason {
-					return &s
-				}
-			}
-			return nil
-		},
-		"shade": func(p float64) string {
-			if p >= .8 {
-				return "high"
-			}
-			if p <= .2 {
-				return "low"
-			}
-			return "middle"
-		},
-	}).Parse(heatmapHTML)
-	if err != nil {
-		return err
-	}
-	var html bytes.Buffer
-	if err := tmpl.Execute(&html, evidence); err != nil {
-		return err
-	}
-	return atomicWrite(filepath.Join(dir, "reason-heatmap.html"), html.Bytes())
+	return atomicWrite(filepath.Join(dir, "reason-heatmap.json"), append(data, '\n'))
 }
 
 const heatmapHTML = `<!doctype html>
