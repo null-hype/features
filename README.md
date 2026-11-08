@@ -118,7 +118,9 @@ reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 ### Compare reasons across a Herdr session
 
 Select the session's completed native Claude JSONL traces and compare them
-with the existing Xeno runner. Wait until Claude exits so the native logs
+with the existing Xeno runner. OpenRouter trace sink session files and the
+version 3 agent session files that yoars runs keep (`session-<agent>.jsonl`)
+are read as threads too. Wait until Claude exits so the native logs
 include the final responses. Supply a resolved `TYPESAFE_API_KEY` as for
 `assess`.
 
