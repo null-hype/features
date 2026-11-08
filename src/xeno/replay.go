@@ -31,10 +31,16 @@ var herdr = func(args ...string) ([]byte, error) {
 // not be at its prompt yet, so a busy pane is retried briefly. A Pi that
 // starts but waits at a login or key prompt (agent_not_ready) still holds the
 // resumed session, so that counts as started.
-func startAgent(name, pane, session string) error {
+func startAgent(kind, name, pane, session string) error {
+	// Each harness resumes a session file its own way: Pi with --session,
+	// oh-my-pi with --resume=<path>, as Herdr's own resume does.
+	resume := []string{"--session", session}
+	if kind == "omp" {
+		resume = []string{"--resume=" + session}
+	}
 	var err error
 	for attempt := 0; attempt < 20; attempt++ {
-		_, err = herdr("agent", "start", name, "--kind", "pi", "--pane", pane, "--", "--session", session)
+		_, err = herdr(append([]string{"agent", "start", name, "--kind", kind, "--pane", pane, "--"}, resume...)...)
 		if err == nil || strings.Contains(err.Error(), "agent_not_ready") {
 			return nil
 		}
@@ -60,9 +66,10 @@ func replay(args []string) error {
 	label := flags.String("label", "xeno replay", "label for the new workspace")
 	positive := flags.String("positive", "", "control reason every thread should fit; lights the verifier")
 	negative := flags.String("negative", "", "control reason no thread should fit; lights the falsifier")
+	kind := flags.String("kind", "omp", "Herdr agent kind that resumes the sessions: omp (oh-my-pi, which yoars recorded with) or pi")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: xeno replay --reasons FILE [--label TEXT] [--positive R --negative R] SESSION...")
-		fmt.Fprintln(flags.Output(), "\nResumes each Pi session file as an agent in its own Herdr pane, assesses it and lights the pane.")
+		fmt.Fprintln(flags.Output(), "Usage: xeno replay --reasons FILE [--label TEXT] [--kind omp|pi] [--positive R --negative R] SESSION...")
+		fmt.Fprintln(flags.Output(), "\nResumes each session file as an agent (oh-my-pi by default) in its own Herdr pane, assesses it and lights the pane.")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -115,7 +122,7 @@ func replay(args []string) error {
 		// Agent names are unique among live agents, and pane IDs are never
 		// reused, so the pane makes the name unique across replays.
 		agent := name + "-" + agentSuffix(pane)
-		if err := startAgent(agent, pane, resumed); err != nil {
+		if err := startAgent(*kind, agent, pane, resumed); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr agent start %s: %v\n", agent, err)
 		}
 		assess := []string{"--reasons", audit}

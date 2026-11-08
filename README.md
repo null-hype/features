@@ -117,9 +117,10 @@ reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
 ### Replay recorded threads in Herdr
 
-`xeno replay` opens a Herdr workspace with one pane per recorded Pi session.
-Each pane resumes that session's agent (`herdr agent start --kind pi --
---session`, on a copy, so the recording is not appended to), so Herdr shows
+`xeno replay` opens a Herdr workspace with one pane per recorded session.
+Each pane resumes that session's agent (`herdr agent start --kind omp --
+--resume=<copy>` by default, or `--kind pi`; on a copy, so the recording is
+not appended to), so Herdr shows
 the agent and its history. Nothing is prompted, so no model is called. replay
 then assesses each thread and lights its pane:
 

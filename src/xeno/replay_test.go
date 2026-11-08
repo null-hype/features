@@ -45,9 +45,9 @@ func TestReplayResumesAnAgentPerSession(t *testing.T) {
 	copies := filepath.Join(cwd, ".witness", "replay", "un225035")
 	want := []string{
 		"workspace create --label yoars run 225035 --cwd " + cwd + " --no-focus",
-		"agent start auth-w9p1 --kind pi --pane w9:p1 -- --session " + filepath.Join(copies, "session-auth.jsonl"),
+		"agent start auth-w9p1 --kind omp --pane w9:p1 -- --resume=" + filepath.Join(copies, "session-auth.jsonl"),
 		"pane split w9:p1 --direction right --no-focus",
-		"agent start ui-w9p2 --kind pi --pane w9:p2 -- --session " + filepath.Join(copies, "session-ui.jsonl"),
+		"agent start ui-w9p2 --kind omp --pane w9:p2 -- --resume=" + filepath.Join(copies, "session-ui.jsonl"),
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("herdr calls:\n%s", strings.Join(calls, "\n"))
@@ -80,13 +80,13 @@ func TestStartAgentRetriesABusyPane(t *testing.T) {
 	replies := []error{fmt.Errorf(`{"error":{"code":"agent_pane_busy"}}`), fmt.Errorf(`{"error":{"code":"agent_not_ready"}}`)}
 	calls := 0
 	herdr = func(args ...string) ([]byte, error) { calls++; return nil, replies[calls-1] }
-	if err := startAgent("auth-w1p1", "w1:p1", "s.jsonl"); err != nil || calls != 2 {
+	if err := startAgent("pi", "auth-w1p1", "w1:p1", "s.jsonl"); err != nil || calls != 2 {
 		t.Fatalf("err %v after %d calls", err, calls)
 	}
 	herdr = func(args ...string) ([]byte, error) {
 		return nil, fmt.Errorf(`{"error":{"code":"agent_start_failed"}}`)
 	}
-	if err := startAgent("auth-w1p1", "w1:p1", "s.jsonl"); err == nil || !strings.Contains(err.Error(), "agent_start_failed") {
+	if err := startAgent("pi", "auth-w1p1", "w1:p1", "s.jsonl"); err == nil || !strings.Contains(err.Error(), "agent_start_failed") {
 		t.Fatalf("err %v", err)
 	}
 }
