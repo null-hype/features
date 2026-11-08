@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -79,8 +78,8 @@ func heatmap(args []string) error {
 	output := flags.String("output", ".witness/run/evidence", "private output directory")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE...")
-		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed threads: Claude JSONL, or OpenRouter trace sink session files.")
-		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.html and reason-heatmap.json.\n\nOptions:")
+		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed threads: Claude JSONL, OpenRouter trace sink session files, or version 3 agent session files (as yoars runs keep).")
+		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.json; a report renders the matrix from it.\n\nOptions:")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -118,7 +117,7 @@ func heatmap(args []string) error {
 	if err := writeHeatmap(*output, evidence); err != nil {
 		return err
 	}
-	fmt.Println(filepath.Join(*output, "reason-heatmap.html"))
+	fmt.Println(filepath.Join(*output, "reason-heatmap.json"))
 	for _, thread := range evidence.Threads {
 		if thread.Error != "" {
 			return errors.New("heat map includes unverified threads; inspect reason-heatmap.json")
@@ -185,6 +184,8 @@ func scoreHeatmap(client *http.Client, endpoint, key, auditPath string, paths []
 		var session string
 		if isSinkThread(raw) {
 			state, session, err = sinkThread(raw)
+		} else if isAgentSession(raw) {
+			state, session, err = agentSession(raw)
 		} else if state, _, err = claudeState(raw, nil); err == nil {
 			session, err = traceSession(raw)
 		}
@@ -210,6 +211,74 @@ func scoreHeatmap(client *http.Client, endpoint, key, auditPath string, paths []
 	evidence.PositiveControl = heatmapControl(evidence.Threads, positive, true)
 	evidence.NegativeControl = heatmapControl(evidence.Threads, negative, false)
 	return evidence, nil
+}
+
+// A version 3 agent session file, the per-agent log yoars runs keep: a
+// "session" header, then messages (user, assistant, toolResult), the room
+// messages injected into the agent's context (custom_message), and
+// compaction summaries. Relay bookkeeping (custom) is not part of the thread.
+func isAgentSession(raw []byte) bool {
+	scan := bufio.NewScanner(bytes.NewReader(raw))
+	scan.Buffer(make([]byte, 4096), 32<<20)
+	for i := 0; i < 3 && scan.Scan(); i++ {
+		var e struct {
+			Type    string `json:"type"`
+			Version int    `json:"version"`
+		}
+		if json.Unmarshal(scan.Bytes(), &e) == nil && e.Type == "session" && e.Version == 3 {
+			return true
+		}
+	}
+	return false
+}
+
+func agentSession(raw []byte) (map[string]any, string, error) {
+	var trace []any
+	session := ""
+	scan := bufio.NewScanner(bytes.NewReader(raw))
+	scan.Buffer(make([]byte, 4096), 32<<20)
+	for scan.Scan() {
+		var e map[string]json.RawMessage
+		if json.Unmarshal(scan.Bytes(), &e) != nil {
+			return nil, "", errors.New("invalid agent session file")
+		}
+		var kind string
+		json.Unmarshal(e["type"], &kind)
+		switch kind {
+		case "session":
+			var id string
+			json.Unmarshal(e["id"], &id)
+			if session != "" && id != session {
+				return nil, "", errors.New("agent session file contains more than one thread")
+			}
+			session = id
+		case "message":
+			var message any
+			decoder := json.NewDecoder(bytes.NewReader(e["message"]))
+			decoder.UseNumber()
+			if decoder.Decode(&message) != nil {
+				return nil, "", errors.New("agent session message is missing")
+			}
+			trace = append(trace, map[string]any{"type": "message", "message": textScorerMedia(message)})
+		case "custom_message":
+			var customType string
+			var content any
+			json.Unmarshal(e["customType"], &customType)
+			json.Unmarshal(e["content"], &content)
+			trace = append(trace, map[string]any{"type": "custom_message", "customType": customType, "content": content})
+		case "compaction":
+			var summary string
+			json.Unmarshal(e["summary"], &summary)
+			trace = append(trace, map[string]any{"type": "compaction", "summary": summary})
+		}
+	}
+	if err := scan.Err(); err != nil {
+		return nil, "", errors.New("agent session line exceeds limit or cannot be read")
+	}
+	if len(trace) == 0 {
+		return nil, "", errors.New("agent session file contains no messages")
+	}
+	return map[string]any{"trace": trace}, session, nil
 }
 
 // A session file from the toolbox's OpenRouter trace sink, one OTLP payload
@@ -357,45 +426,7 @@ func writeHeatmap(dir string, evidence heatmapEvidence) error {
 	if err != nil {
 		return err
 	}
-	if err := atomicWrite(filepath.Join(dir, "reason-heatmap.json"), append(data, '\n')); err != nil {
-		return err
-	}
-	tmpl, err := template.New("heatmap").Funcs(template.FuncMap{
-		"name": func(t heatmapThread) string {
-			if t.Session != "" {
-				return t.Session
-			}
-			return filepath.Base(t.Trace)
-		},
-		"cell": func(t heatmapThread, reason string) *reasonScore {
-			if t.Error != "" {
-				return nil
-			}
-			for _, s := range t.Scores {
-				if s.Reason == reason {
-					return &s
-				}
-			}
-			return nil
-		},
-		"shade": func(p float64) string {
-			if p >= .8 {
-				return "high"
-			}
-			if p <= .2 {
-				return "low"
-			}
-			return "middle"
-		},
-	}).Parse(heatmapHTML)
-	if err != nil {
-		return err
-	}
-	var html bytes.Buffer
-	if err := tmpl.Execute(&html, evidence); err != nil {
-		return err
-	}
-	return atomicWrite(filepath.Join(dir, "reason-heatmap.html"), html.Bytes())
+	return atomicWrite(filepath.Join(dir, "reason-heatmap.json"), append(data, '\n'))
 }
 
 const heatmapHTML = `<!doctype html>

@@ -74,17 +74,10 @@ func TestHeatmapScoresEveryThreadWithExistingQuestions(t *testing.T) {
 	if err := writeHeatmap(out, evidence); err != nil {
 		t.Fatal(err)
 	}
-	html, err := os.ReadFile(filepath.Join(out, "reason-heatmap.html"))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Join(out, "reason-heatmap.html")); !os.IsNotExist(err) {
+		t.Fatal("xeno wrote its own HTML heat map; the report renders the evidence")
 	}
-	if strings.Contains(string(html), "Redact <secret>") || !strings.Contains(string(html), "Redact &lt;secret&gt;") {
-		t.Fatal("unescaped reason in HTML")
-	}
-	if !strings.Contains(string(html), "0.94") || !strings.Contains(string(html), "positive control") {
-		t.Fatal("scores or control source missing")
-	}
-	for _, name := range []string{"reason-heatmap.html", "reason-heatmap.json"} {
+	for _, name := range []string{"reason-heatmap.json"} {
 		info, err := os.Stat(filepath.Join(out, name))
 		if err != nil {
 			t.Fatal(err)
@@ -214,5 +207,81 @@ func TestHeatmapReadsTraceSinkSessions(t *testing.T) {
 	}
 	if len(evidence.Threads) != 1 || evidence.Threads[0].Session != "sess-1" || len(evidence.Threads[0].Scores) != 3 {
 		t.Fatalf("sink thread: %+v", evidence.Threads)
+	}
+}
+
+func writeAgentSession(t *testing.T, dir, name string, ids ...string) string {
+	t.Helper()
+	lines := []string{`{"type":"title","title":"planner","v":1}`}
+	for _, id := range ids {
+		lines = append(lines, fmt.Sprintf(`{"type":"session","version":3,"id":%q,"cwd":"/work/app"}`, id))
+	}
+	lines = append(lines,
+		`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Build the pipeline"}]}}`,
+		`{"type":"custom","customType":"yoars2-cursor","data":{"seq":1}}`,
+		`{"type":"custom_message","customType":"yoars2-norms","content":"[YOARS norms] No module reaches the summary unreviewed"}`,
+		`{"type":"message","message":{"role":"assistant","content":[{"type":"toolCall","name":"glob","arguments":{"path":"/work/app"}}]}}`,
+		`{"type":"message","message":{"role":"toolResult","toolName":"glob","content":[{"type":"text","text":"SPEC.md"}]}}`,
+		`{"type":"compaction","summary":"Coordinated parse, normalize and report"}`,
+	)
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A yoars agent's thread is its version 3 session file: its messages, the room
+// messages it was shown and its compaction summaries, without relay bookkeeping.
+func TestHeatmapReadsAgentSessions(t *testing.T) {
+	audit, _ := heatmapInputs(t)
+	dir := t.TempDir()
+	path := writeAgentSession(t, dir, "session-planner.jsonl", "01a0a7bf")
+	raw, _ := os.ReadFile(path)
+	if !isAgentSession(raw) || isSinkThread(raw) {
+		t.Fatal("agent session not recognised as one")
+	}
+	state, session, err := agentSession(raw)
+	if err != nil || session != "01a0a7bf" {
+		t.Fatalf("session %q, err %v", session, err)
+	}
+	kinds := []string{}
+	for _, e := range state["trace"].([]any) {
+		kinds = append(kinds, e.(map[string]any)["type"].(string))
+	}
+	if strings.Join(kinds, " ") != "message custom_message message message compaction" {
+		t.Fatalf("thread events: %v", kinds)
+	}
+	if _, _, err := agentSession(func() []byte {
+		b, _ := os.ReadFile(writeAgentSession(t, dir, "mixed.jsonl", "one", "two"))
+		return b
+	}()); err == nil {
+		t.Fatal("a file holding two sessions was accepted as one thread")
+	}
+
+	client := &http.Client{Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			State     json.RawMessage            `json:"state"`
+			Questions map[string]json.RawMessage `json:"questions"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body.State), "yoars2-cursor") || !strings.Contains(string(body.State), "No module reaches the summary") {
+			t.Fatalf("agent session state: %s", body.State)
+		}
+		answers := map[string]any{}
+		for q := range body.Questions {
+			answers[q] = map[string]float64{"noul": .5}
+		}
+		raw, _ := json.Marshal(map[string]any{"model": jevModel, "answers": answers})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(raw)))}, nil
+	})}
+	evidence, err := scoreHeatmap(client, "https://example.invalid", "fixture", audit, []string{path}, "Classify health", "Deploy a payment gateway")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evidence.Threads) != 1 || evidence.Threads[0].Session != "01a0a7bf" || len(evidence.Threads[0].Scores) != 3 {
+		t.Fatalf("agent session thread: %+v", evidence.Threads)
 	}
 }

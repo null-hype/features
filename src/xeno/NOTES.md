@@ -8,26 +8,11 @@ xeno falsifier failed     # or refuted
 xeno jev 0.9              # Jev's confidence both arms were genuine
 ```
 
-Herdr shows the lights only where your sidebar rows ask for them. Add the
-tokens to `~/.config/herdr/config.toml`, in the order of a window's traffic
-lights:
-
-```toml
-[ui.sidebar.agents]
-rows = [
-  ["state_icon", "workspace", "tab"],
-  [
-    "agent",
-    { token = "$xeno_falsifier", fg = "#ff5f57" },
-    { token = "$xeno_jev", fg = "#febc2e" },
-    { token = "$xeno_verifier", fg = "#28c840" },
-    { token = "$xeno_status", dim = true, rules = [
-      { equals = "uncontrolled", fg = "#febc2e", dim = false },
-      { equals = "unverified", fg = "#ff5f57", bold = true, dim = false },
-    ] },
-  ],
-]
-```
+Herdr shows the lights only where your sidebar rows ask for them. Append
+[`sidebar.toml`](sidebar.toml) to `~/.config/herdr/config.toml` and run
+`herdr server reload-config`. It puts the falsifier, Jev and verifier lights,
+in a window's traffic-light order, after each agent's name, followed by
+`$xeno_status` and the reason verdict `$xeno_reason`.
 
 Red is the falsifier's slot and green the verifier's, not bad and good news: a
 lit light means that arm ran. Only `uncontrolled` and `unverified` call for

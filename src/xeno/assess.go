@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -265,6 +266,24 @@ func assess(args []string) error {
 		Cwd        string `json:"cwd"`
 		Final      string `json:"last_assistant_message"`
 	}
+	// --reasons FILE assesses against a retained audit (as xeno replay does)
+	// instead of refreshing the signed-in agent's. --positive and --negative
+	// add xeno's two controls, which then light the pane's verifier and
+	// falsifier slots.
+	reasonsFile, positive, negative := "", "", ""
+	for len(args) >= 2 && strings.HasPrefix(args[0], "--") && args[0] != "--hook" {
+		switch args[0] {
+		case "--reasons":
+			reasonsFile = args[1]
+		case "--positive":
+			positive = args[1]
+		case "--negative":
+			negative = args[1]
+		default:
+			return fmt.Errorf("unknown option %s", args[0])
+		}
+		args = args[2:]
+	}
 	isHook := len(args) == 1 && args[0] == "--hook"
 	path := os.Getenv("XENO_CLAUDE_TRACE")
 	if isHook {
@@ -275,7 +294,7 @@ func assess(args []string) error {
 	} else if len(args) == 1 {
 		path = args[0]
 	} else if len(args) > 1 {
-		return errors.New("usage: xeno assess [--hook | TRACE]")
+		return errors.New("usage: xeno assess [--reasons FILE] [--positive REASON --negative REASON] [--hook | TRACE]")
 	}
 	dir := os.Getenv("XENO_STATE_DIR")
 	if dir == "" {
@@ -338,6 +357,7 @@ func assess(args []string) error {
 
 	assessment := map[string]any{"model": jevModel, "trace": path}
 	line, status, message, sourceHash := 1, "unverified", "", ""
+	var lights [][]string
 	judgeErr := func() error {
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -353,17 +373,27 @@ func assess(args []string) error {
 			// as evidence, rather than treating later appends as stale findings.
 			sourceHash = ""
 		}
-		state, resultLine, err := claudeState(raw, final)
-		line = resultLine
+		var state map[string]any
+		if isAgentSession(raw) {
+			state, _, err = agentSession(raw)
+		} else {
+			state, line, err = claudeState(raw, final)
+		}
 		if err != nil {
 			return err
 		}
-		if err := refresh(); err != nil {
-			return err
-		}
-		records, err := os.ReadFile(filepath.Join(dir, "reasons.json"))
-		if err != nil {
-			return errors.New("cannot read reasons.json; run xeno refresh first")
+		var records []byte
+		if reasonsFile != "" {
+			if records, err = os.ReadFile(reasonsFile); err != nil {
+				return errors.New("cannot read the --reasons file")
+			}
+		} else {
+			if err := refresh(); err != nil {
+				return err
+			}
+			if records, err = os.ReadFile(filepath.Join(dir, "reasons.json")); err != nil {
+				return errors.New("cannot read reasons.json; run xeno refresh first")
+			}
 		}
 		reasons, err := auditReasons(records)
 		if err != nil {
@@ -381,12 +411,20 @@ func assess(args []string) error {
 			}
 			state["prompt"] = string(raw)
 		}
+		audited := len(reasons)
+		for _, control := range []string{positive, negative} {
+			if control != "" && !slices.Contains(reasons, control) {
+				reasons = append(reasons, control)
+			}
+		}
 		scores, request, response, err := scoreReasons(&http.Client{Timeout: 30 * time.Second}, "https://api.typesafe.ai/v1/systemone", key, state, reasons)
 		assessment["request"], assessment["response"] = request, response
 		if err != nil {
 			return err
 		}
 		assessment["scores"] = scores
+		lights = controlLights(scores, reasons[:audited], positive, negative)
+		scores = scores[:audited]
 		status = reasonStatus(scores)
 		parts := []string{}
 		for _, s := range scores {
@@ -423,5 +461,44 @@ func assess(args []string) error {
 	if err := report("reason", evidence, run); err != nil {
 		return err
 	}
+	for _, light := range lights {
+		if err := report(light...); err != nil {
+			return err
+		}
+	}
 	return judgeErr
+}
+
+// controlLights maps a heat map row onto the pane's lights: the positive
+// control on the verifier (green), the negative control on the falsifier
+// (red), and the thread's best fit to its audited reasons on jev (amber). A
+// control in xeno's uncertain band leaves its light hollow.
+func controlLights(scores []reasonScore, audited []string, positive, negative string) [][]string {
+	fit := map[string]float64{}
+	for _, s := range scores {
+		fit[s.Reason] = s.Fits
+	}
+	lights := [][]string{}
+	if f, ok := fit[positive]; ok && positive != "" {
+		if f >= .8 {
+			lights = append(lights, []string{"verifier", "confirmed"})
+		} else if f <= .2 {
+			lights = append(lights, []string{"verifier", "failed"})
+		}
+	}
+	if f, ok := fit[negative]; ok && negative != "" {
+		if f <= .2 {
+			lights = append(lights, []string{"falsifier", "failed"})
+		} else if f >= .8 {
+			lights = append(lights, []string{"falsifier", "refuted"})
+		}
+	}
+	if positive != "" || negative != "" {
+		best := 0.0
+		for _, r := range audited {
+			best = max(best, fit[r])
+		}
+		lights = append(lights, []string{"jev", fmt.Sprintf("%.2f", best)})
+	}
+	return lights
 }

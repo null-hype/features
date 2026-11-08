@@ -115,10 +115,34 @@ The existing `claim`, `verifier`, `falsifier`, and `jev` commands from the
 lights plugin are also included. Their control verdicts remain distinct from
 reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
+### Replay recorded threads in Herdr
+
+`xeno replay` opens a Herdr workspace with one pane per recorded session.
+Each pane resumes that session's agent (`herdr agent start --kind omp --
+--resume=<copy>` by default, or `--kind pi`; on a copy, so the recording is
+not appended to), so Herdr shows
+the agent and its history. Nothing is prompted, so no model is called. replay
+then assesses each thread and lights its pane:
+
+```sh
+TYPESAFE_API_KEY=pass://vault/item/field pass-cli run -- \
+  xeno replay --reasons reasons.json --label 'yoars run' \
+    --positive 'The shared task.' --negative 'Work nobody asked for.' session-*.jsonl
+```
+
+With `--positive` and `--negative`, each row reads like a heat map row: the
+positive control on the verifier (green), the negative control on the
+falsifier (red), and the thread's best fit to the reasons on jev (amber). A
+control in the uncertain band leaves its light hollow. `xeno assess` takes the
+same two options. Evidence goes to `.witness/run/<agent>` and the resumed
+copies to `.witness/replay/` under the directory replay was started from.
+
 ### Compare reasons across a Herdr session
 
 Select the session's completed native Claude JSONL traces and compare them
-with the existing Xeno runner. Wait until Claude exits so the native logs
+with the existing Xeno runner. OpenRouter trace sink session files and the
+version 3 agent session files that yoars runs keep (`session-<agent>.jsonl`)
+are read as threads too. Wait until Claude exits so the native logs
 include the final responses. Supply a resolved `TYPESAFE_API_KEY` as for
 `assess`.
 
@@ -143,15 +167,15 @@ jq -s 'add' author-reasons.json verifier-reasons.json falsifier-reasons.json \
   > session-reasons.json
 ```
 
-Open `reason-heatmap.html` in the output directory. Rows are distinct
-`ItemRead` reasons plus the two marked control rows; columns are the traces
-you selected. Cell color and the main number show reason fit, with the
-separate achievement score below it. The positive control expects at least
-one fit at or above 0.8. The negative control expects every fit at or below
-0.2. Control results are `held`, `missed`, or `unverified`.
+The matrix is written to `reason-heatmap.json` in the output directory, for a
+report to render: rows are distinct `ItemRead` reasons plus the two marked
+control rows, columns are the traces you selected, and each cell holds the
+reason fit and the separate achievement score. The positive control expects
+at least one fit at or above 0.8. The negative control expects every fit at
+or below 0.2. Control results are `held`, `missed`, or `unverified`.
 
-The adjacent `reason-heatmap.json` retains requests, responses, input paths
-and hashes. Both files are private to their owner. An API failure retains
+It also retains requests, responses, input paths and hashes, and is private
+to its owner. An API failure retains
 available columns, marks unavailable cells `unverified`, and exits nonzero.
 Input errors fail before rendering; any existing output retains its earlier
 `observedAt` timestamp. Run `xeno heatmap --help` for the command options.
