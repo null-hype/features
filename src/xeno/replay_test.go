@@ -4,24 +4,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-// Replay opens one workspace, splits a pane per further thread, names each
-// pane for its agent and runs xeno assess in it; the key travels only as a
-// Pass reference.
-func TestReplayOpensAPanePerThread(t *testing.T) {
+// Replay opens one workspace, splits a pane per further session, resumes each
+// session's Pi agent there from a copy, and assesses the thread with the
+// controls for that pane.
+func TestReplayResumesAnAgentPerSession(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
 	audit := filepath.Join(dir, "reasons.json")
 	os.WriteFile(audit, []byte(`[{"action":"ItemRead","payload":{"reason":"parse"}}]`), 0600)
 	threads := []string{writeAgentSession(t, dir, "session-auth.jsonl", "a"), writeAgentSession(t, dir, "session-ui.jsonl", "b")}
-	t.Setenv("TYPESAFE_API_KEY", "pass://infra/typesafe.ai/TYPESAFE_API_KEY")
-	cwd, _ := os.Getwd()
 	var calls []string
 	split := 0
-	saved := herdr
-	defer func() { herdr = saved }()
+	savedHerdr, savedAssess := herdr, assessPane
+	defer func() { herdr, assessPane = savedHerdr, savedAssess }()
 	herdr = func(args ...string) ([]byte, error) {
 		calls = append(calls, strings.Join(args, " "))
 		switch args[0] + " " + args[1] {
@@ -33,47 +33,40 @@ func TestReplayOpensAPanePerThread(t *testing.T) {
 		}
 		return []byte(`{"result":{}}`), nil
 	}
-	if err := replay(append([]string{"--reasons", audit, "--label", "yoars run", "--positive", "Build it.", "--negative", "Deploy k8s."}, threads...)); err != nil {
+	var assessed [][]string
+	assessPane = func(args []string) error {
+		assessed = append(assessed, append([]string{os.Getenv("HERDR_PANE_ID")}, args...))
+		return nil
+	}
+	if err := replay(append([]string{"--reasons", audit, "--label", "yoars run 225035", "--positive", "Build it.", "--negative", "Deploy k8s."}, threads...)); err != nil {
 		t.Fatal(err)
 	}
+	cwd, _ := os.Getwd()
+	copies := filepath.Join(cwd, ".witness", "replay", "un225035")
 	want := []string{
-		"workspace create --label yoars run --cwd " + cwd + " --no-focus --env TYPESAFE_API_KEY=pass://infra/typesafe.ai/TYPESAFE_API_KEY",
-		"pane rename w9:p1 auth",
-		"pane split w9:p1 --direction right --no-focus --env TYPESAFE_API_KEY=pass://infra/typesafe.ai/TYPESAFE_API_KEY",
-		"pane rename w9:p2 ui",
+		"workspace create --label yoars run 225035 --cwd " + cwd + " --no-focus",
+		"agent start auth-un225035 --kind pi --pane w9:p1 -- --session " + filepath.Join(copies, "session-auth.jsonl"),
+		"pane split w9:p1 --direction right --no-focus",
+		"agent start ui-un225035 --kind pi --pane w9:p2 -- --session " + filepath.Join(copies, "session-ui.jsonl"),
 	}
-	got := []string{}
-	for _, c := range calls {
-		if !strings.HasPrefix(c, "pane run") {
-			got = append(got, c)
-		}
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("herdr calls:\n%s", strings.Join(calls, "\n"))
 	}
-	runs := 0
-	for _, c := range calls {
-		if strings.HasPrefix(c, "pane run") {
-			runs++
-			if !strings.Contains(c, "XENO_RUN_DIR='"+filepath.Join(cwd, ".witness", "run")) || !strings.Contains(c, "pass-cli run -- ") || !strings.Contains(c, " assess --reasons '"+audit+"' --positive 'Build it.' --negative 'Deploy k8s.' ") {
-				t.Fatalf("pane command: %s", c)
-			}
+	for i, pane := range []string{"w9:p1", "w9:p2"} {
+		got := assessed[i]
+		if got[0] != pane || strings.Join(got[1:7], " ") != "--reasons "+audit+" --positive Build it. --negative Deploy k8s." || got[7] != threads[i] {
+			t.Fatalf("assess %d: %v", i, got)
 		}
 	}
-	if runs != 2 {
-		t.Fatalf("%d panes ran assess", runs)
+	if raw, _ := os.ReadFile(filepath.Join(copies, "session-auth.jsonl")); len(raw) == 0 {
+		t.Fatal("the resumed copy is missing")
 	}
 }
 
-func TestReplayRefusesAResolvedKey(t *testing.T) {
-	t.Setenv("TYPESAFE_API_KEY", "sk-live-secret")
-	saved := herdr
-	defer func() { herdr = saved }()
-	herdr = func(args ...string) ([]byte, error) {
-		t.Fatal("called herdr with a resolved key in the environment")
-		return nil, nil
-	}
-	if err := replay([]string{"--reasons", "r.json", "t.jsonl"}); err == nil {
-		t.Fatal("replay accepted a resolved key")
+func TestAgentSuffix(t *testing.T) {
+	for label, want := range map[string]string{"yoars qwen3.6-35b-010514": "5b010514", "x": "x", "--": "replay"} {
+		if got := agentSuffix(label); got != want {
+			t.Errorf("agentSuffix(%q) = %q, want %q", label, got, want)
+		}
 	}
 }

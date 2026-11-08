@@ -20,13 +20,12 @@ var herdr = func(args ...string) ([]byte, error) {
 	return exec.Command(bin, args...).Output()
 }
 
-// Variables replay hands each pane, as Pass references only: a pane resolves
-// them with pass-cli itself, so no secret reaches a command line.
-var replayEnv = []string{"TYPESAFE_API_KEY", "PROTON_PASS_AGENT_REASON"}
-
-// xeno replay opens a Herdr workspace with one pane per recorded thread, each
-// running `xeno assess` against the given reasons, so the sidebar shows the
-// recorded session the way xeno sees a live one.
+// xeno replay opens a Herdr workspace with one pane per recorded thread. Each
+// pane resumes the thread's own agent (Pi, from its session file), so Herdr
+// shows the agent and its history; nothing is prompted, so no model is called.
+// replay then assesses each thread and lights that pane's row, so the
+// workspace reads as the run's heat map. Run it with TYPESAFE_API_KEY
+// resolved, e.g. under `pass-cli run`.
 func replay(args []string) error {
 	flags := flag.NewFlagSet("replay", flag.ContinueOnError)
 	reasons := flags.String("reasons", "", "retained Pass audit JSON whose ItemRead reasons each thread is assessed against")
@@ -34,8 +33,8 @@ func replay(args []string) error {
 	positive := flags.String("positive", "", "control reason every thread should fit; lights the verifier")
 	negative := flags.String("negative", "", "control reason no thread should fit; lights the falsifier")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: xeno replay --reasons FILE [--label TEXT] THREAD...")
-		fmt.Fprintln(flags.Output(), "\nOpens a Herdr workspace with a pane per thread, each assessing it. Threads are Claude JSONL, trace sink sessions or agent session files.")
+		fmt.Fprintln(flags.Output(), "Usage: xeno replay --reasons FILE [--label TEXT] [--positive R --negative R] SESSION...")
+		fmt.Fprintln(flags.Output(), "\nResumes each Pi session file as an agent in its own Herdr pane, assesses it and lights the pane.")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -43,72 +42,89 @@ func replay(args []string) error {
 	}
 	if *reasons == "" || flags.NArg() == 0 {
 		flags.Usage()
-		return errors.New("replay needs --reasons and at least one thread")
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
+		return errors.New("replay needs --reasons and at least one session")
 	}
 	audit, err := filepath.Abs(*reasons)
 	if err != nil {
 		return err
 	}
-	// Panes start here, and each writes its evidence to its own run directory.
+	// Panes start here; each thread's copy and evidence live under .witness.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	env, assess := []string{}, []string{}
-	for _, name := range replayEnv {
-		value := os.Getenv(name)
-		if value == "" {
-			continue
-		}
-		if name == "TYPESAFE_API_KEY" && !strings.HasPrefix(value, "pass://") {
-			return errors.New("replay passes TYPESAFE_API_KEY to its panes as a pass:// reference, never as a resolved key")
-		}
-		env = append(env, "--env", name+"="+value)
-	}
-	created, err := herdrResult(append([]string{"workspace", "create", "--label", *label, "--cwd", cwd, "--no-focus"}, env...)...)
+	created, err := herdrResult("workspace", "create", "--label", *label, "--cwd", cwd, "--no-focus")
 	if err != nil {
 		return err
 	}
+	suffix := agentSuffix(*label)
 	pane := created.RootPane.PaneID
 	for i, thread := range flags.Args() {
-		thread, err := filepath.Abs(thread)
-		if err != nil {
-			return err
-		}
 		if i > 0 {
 			direction := "right"
 			if i%2 == 0 {
 				direction = "down"
 			}
-			split, err := herdrResult(append([]string{"pane", "split", pane, "--direction", direction, "--no-focus"}, env...)...)
+			split, err := herdrResult("pane", "split", pane, "--direction", direction, "--no-focus")
 			if err != nil {
 				return err
 			}
 			pane = split.Pane.PaneID
 		}
 		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(thread), "session-"), filepath.Ext(thread))
-		if _, err := herdr("pane", "rename", pane, name); err != nil {
-			return fmt.Errorf("herdr pane rename: %w", err)
+		// Pi appends to the session it resumes; resume a copy, keep the recording.
+		raw, err := os.ReadFile(thread)
+		if err != nil {
+			return err
 		}
-		run := filepath.Join(cwd, ".witness", "run", name)
-		assess = []string{"XENO_RUN_DIR=" + quote(run), "pass-cli", "run", "--", quote(self), "assess", "--reasons", quote(audit)}
+		resumed := filepath.Join(cwd, ".witness", "replay", suffix, filepath.Base(thread))
+		if err := os.MkdirAll(filepath.Dir(resumed), 0700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(resumed, raw, 0600); err != nil {
+			return err
+		}
+		if out, err := herdr("agent", "start", name+"-"+suffix, "--kind", "pi", "--pane", pane, "--", "--session", resumed); err != nil {
+			// A Pi with no key or login may wait at a prompt: the pane still
+			// holds the resumed agent, so report it and carry on.
+			fmt.Fprintf(os.Stderr, "herdr agent start %s: %v %s\n", name, err, out)
+		}
+		assess := []string{"--reasons", audit}
 		if *positive != "" {
-			assess = append(assess, "--positive", quote(*positive))
+			assess = append(assess, "--positive", *positive)
 		}
 		if *negative != "" {
-			assess = append(assess, "--negative", quote(*negative))
+			assess = append(assess, "--negative", *negative)
 		}
-		assess = append(assess, quote(thread))
-		if _, err := herdr("pane", "run", pane, strings.Join(assess, " ")); err != nil {
-			return fmt.Errorf("herdr pane run: %w", err)
+		os.Setenv("HERDR_PANE_ID", pane)
+		os.Setenv("XENO_RUN_DIR", filepath.Join(cwd, ".witness", "run", name))
+		if err := assessPane(append(assess, thread)); err != nil {
+			fmt.Fprintf(os.Stderr, "xeno assess %s: %v\n", name, err)
 		}
 		fmt.Println(pane, name)
 	}
 	return nil
+}
+
+// assessPane is assess, replaceable in tests.
+var assessPane = assess
+
+// agentSuffix makes agent names unique per replay: the label's last letters
+// and digits, as Herdr names allow.
+func agentSuffix(label string) string {
+	keep := []rune{}
+	for _, r := range strings.ToLower(label) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			keep = append(keep, r)
+		}
+	}
+	if len(keep) > 8 {
+		keep = keep[len(keep)-8:]
+	}
+	if len(keep) == 0 {
+		return "replay"
+	}
+	return string(keep)
 }
 
 type herdrIDs struct {
@@ -133,6 +149,3 @@ func herdrResult(args ...string) (herdrIDs, error) {
 	}
 	return response.Result, nil
 }
-
-// quote makes a path one shell word for `herdr pane run`.
-func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

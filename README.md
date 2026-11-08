@@ -117,24 +117,24 @@ reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
 ### Replay recorded threads in Herdr
 
-`xeno replay` opens a Herdr workspace with one pane per thread, named for its
-agent, and runs `xeno assess` against the given reasons in each, so the
-sidebar shows a recorded session the way xeno sees a live one:
+`xeno replay` opens a Herdr workspace with one pane per recorded Pi session.
+Each pane resumes that session's agent (`herdr agent start --kind pi --
+--session`, on a copy, so the recording is not appended to), so Herdr shows
+the agent and its history. Nothing is prompted, so no model is called. replay
+then assesses each thread and lights its pane:
 
 ```sh
-TYPESAFE_API_KEY=pass://vault/item/field \
-  xeno replay --reasons reasons.json --label 'yoars run' session-*.jsonl
+TYPESAFE_API_KEY=pass://vault/item/field pass-cli run -- \
+  xeno replay --reasons reasons.json --label 'yoars run' \
+    --positive 'The shared task.' --negative 'Work nobody asked for.' session-*.jsonl
 ```
 
-With `--positive` and `--negative`, each pane also scores xeno's two
-controls and lights its row like a heat map row: the positive control on the
-verifier (green), the negative control on the falsifier (red), and the
-thread's best fit to the reasons on jev (amber). A control in the uncertain
-band leaves its light hollow. `xeno assess` takes the same two options.
-
-Each pane resolves `TYPESAFE_API_KEY` itself with `pass-cli run`; replay only
-passes it on as a `pass://` reference, never as a resolved key. Evidence goes
-to `.witness/run/<agent>` under the directory replay was started from.
+With `--positive` and `--negative`, each row reads like a heat map row: the
+positive control on the verifier (green), the negative control on the
+falsifier (red), and the thread's best fit to the reasons on jev (amber). A
+control in the uncertain band leaves its light hollow. `xeno assess` takes the
+same two options. Evidence goes to `.witness/run/<agent>` and the resumed
+copies to `.witness/replay/` under the directory replay was started from.
 
 ### Compare reasons across a Herdr session
 
