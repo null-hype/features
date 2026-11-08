@@ -30,6 +30,11 @@ func command(args []string) (int, error) {
 				return 1, err
 			}
 			return 0, nil
+		case "replay":
+			if err := replay(args[1:]); err != nil {
+				return 1, err
+			}
+			return 0, nil
 		case "assess":
 			if err := assess(args[1:]); err != nil {
 				return 1, err

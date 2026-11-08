@@ -115,6 +115,21 @@ The existing `claim`, `verifier`, `falsifier`, and `jev` commands from the
 lights plugin are also included. Their control verdicts remain distinct from
 reason assessment. See [the lights configuration](src/xeno/NOTES.md).
 
+### Replay recorded threads in Herdr
+
+`xeno replay` opens a Herdr workspace with one pane per thread, named for its
+agent, and runs `xeno assess` against the given reasons in each, so the
+sidebar shows a recorded session the way xeno sees a live one:
+
+```sh
+TYPESAFE_API_KEY=pass://vault/item/field \
+  xeno replay --reasons reasons.json --label 'yoars run' session-*.jsonl
+```
+
+Each pane resolves `TYPESAFE_API_KEY` itself with `pass-cli run`; replay only
+passes it on as a `pass://` reference, never as a resolved key. Evidence goes
+to `.witness/run/<agent>` under the directory replay was started from.
+
 ### Compare reasons across a Herdr session
 
 Select the session's completed native Claude JSONL traces and compare them
