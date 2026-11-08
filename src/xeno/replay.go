@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // herdr runs the Herdr CLI the plugin was started with. Tests replace it.
@@ -17,8 +18,35 @@ var herdr = func(args ...string) ([]byte, error) {
 	if bin == "" {
 		bin = "herdr"
 	}
-	return exec.Command(bin, args...).Output()
+	out, err := exec.Command(bin, args...).Output()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && len(exit.Stderr) > 0 {
+		// Herdr reports server errors as JSON on stderr: keep them.
+		err = fmt.Errorf("%s", strings.TrimSpace(string(exit.Stderr)))
+	}
+	return out, err
 }
+
+// startAgent resumes a session's Pi agent in a pane. A new pane's shell may
+// not be at its prompt yet, so a busy pane is retried briefly. A Pi that
+// starts but waits at a login or key prompt (agent_not_ready) still holds the
+// resumed session, so that counts as started.
+func startAgent(name, pane, session string) error {
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		_, err = herdr("agent", "start", name, "--kind", "pi", "--pane", pane, "--", "--session", session)
+		if err == nil || strings.Contains(err.Error(), "agent_not_ready") {
+			return nil
+		}
+		if !strings.Contains(err.Error(), "agent_pane_busy") {
+			return err
+		}
+		time.Sleep(retryDelay)
+	}
+	return err
+}
+
+var retryDelay = 500 * time.Millisecond
 
 // xeno replay opens a Herdr workspace with one pane per recorded thread. Each
 // pane resumes the thread's own agent (Pi, from its session file), so Herdr
@@ -84,10 +112,11 @@ func replay(args []string) error {
 		if err := os.WriteFile(resumed, raw, 0600); err != nil {
 			return err
 		}
-		if out, err := herdr("agent", "start", name+"-"+suffix, "--kind", "pi", "--pane", pane, "--", "--session", resumed); err != nil {
-			// A Pi with no key or login may wait at a prompt: the pane still
-			// holds the resumed agent, so report it and carry on.
-			fmt.Fprintf(os.Stderr, "herdr agent start %s: %v %s\n", name, err, out)
+		// Agent names are unique among live agents, and pane IDs are never
+		// reused, so the pane makes the name unique across replays.
+		agent := name + "-" + agentSuffix(pane)
+		if err := startAgent(agent, pane, resumed); err != nil {
+			fmt.Fprintf(os.Stderr, "herdr agent start %s: %v\n", agent, err)
 		}
 		assess := []string{"--reasons", audit}
 		if *positive != "" {
