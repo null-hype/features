@@ -31,6 +31,8 @@ func replay(args []string) error {
 	flags := flag.NewFlagSet("replay", flag.ContinueOnError)
 	reasons := flags.String("reasons", "", "retained Pass audit JSON whose ItemRead reasons each thread is assessed against")
 	label := flags.String("label", "xeno replay", "label for the new workspace")
+	positive := flags.String("positive", "", "control reason every thread should fit; lights the verifier")
+	negative := flags.String("negative", "", "control reason no thread should fit; lights the falsifier")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: xeno replay --reasons FILE [--label TEXT] THREAD...")
 		fmt.Fprintln(flags.Output(), "\nOpens a Herdr workspace with a pane per thread, each assessing it. Threads are Claude JSONL, trace sink sessions or agent session files.")
@@ -93,7 +95,14 @@ func replay(args []string) error {
 			return fmt.Errorf("herdr pane rename: %w", err)
 		}
 		run := filepath.Join(cwd, ".witness", "run", name)
-		assess = []string{"XENO_RUN_DIR=" + quote(run), "pass-cli", "run", "--", quote(self), "assess", "--reasons", quote(audit), quote(thread)}
+		assess = []string{"XENO_RUN_DIR=" + quote(run), "pass-cli", "run", "--", quote(self), "assess", "--reasons", quote(audit)}
+		if *positive != "" {
+			assess = append(assess, "--positive", quote(*positive))
+		}
+		if *negative != "" {
+			assess = append(assess, "--negative", quote(*negative))
+		}
+		assess = append(assess, quote(thread))
 		if _, err := herdr("pane", "run", pane, strings.Join(assess, " ")); err != nil {
 			return fmt.Errorf("herdr pane run: %w", err)
 		}

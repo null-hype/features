@@ -126,6 +126,12 @@ TYPESAFE_API_KEY=pass://vault/item/field \
   xeno replay --reasons reasons.json --label 'yoars run' session-*.jsonl
 ```
 
+With `--positive` and `--negative`, each pane also scores xeno's two
+controls and lights its row like a heat map row: the positive control on the
+verifier (green), the negative control on the falsifier (red), and the
+thread's best fit to the reasons on jev (amber). A control in the uncertain
+band leaves its light hollow. `xeno assess` takes the same two options.
+
 Each pane resolves `TYPESAFE_API_KEY` itself with `pass-cli run`; replay only
 passes it on as a `pass://` reference, never as a resolved key. Evidence goes
 to `.witness/run/<agent>` under the directory replay was started from.

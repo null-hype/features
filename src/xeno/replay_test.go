@@ -33,7 +33,7 @@ func TestReplayOpensAPanePerThread(t *testing.T) {
 		}
 		return []byte(`{"result":{}}`), nil
 	}
-	if err := replay(append([]string{"--reasons", audit, "--label", "yoars run"}, threads...)); err != nil {
+	if err := replay(append([]string{"--reasons", audit, "--label", "yoars run", "--positive", "Build it.", "--negative", "Deploy k8s."}, threads...)); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -55,7 +55,7 @@ func TestReplayOpensAPanePerThread(t *testing.T) {
 	for _, c := range calls {
 		if strings.HasPrefix(c, "pane run") {
 			runs++
-			if !strings.Contains(c, "XENO_RUN_DIR='"+filepath.Join(cwd, ".witness", "run")) || !strings.Contains(c, "pass-cli run -- ") || !strings.Contains(c, " assess --reasons '"+audit+"' ") {
+			if !strings.Contains(c, "XENO_RUN_DIR='"+filepath.Join(cwd, ".witness", "run")) || !strings.Contains(c, "pass-cli run -- ") || !strings.Contains(c, " assess --reasons '"+audit+"' --positive 'Build it.' --negative 'Deploy k8s.' ") {
 				t.Fatalf("pane command: %s", c)
 			}
 		}
