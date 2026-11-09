@@ -285,3 +285,45 @@ func TestHeatmapReadsAgentSessions(t *testing.T) {
 		t.Fatalf("agent session thread: %+v", evidence.Threads)
 	}
 }
+
+func TestRequestedAliasMustResolveToPinnedJev(t *testing.T) {
+	audit, paths := heatmapInputs(t)
+	defer func(was string) { jevRequestModel = was }(jevRequestModel)
+	jevRequestModel = "jev-latest"
+	for _, resolved := range []string{jevModel, "jev-1.15.0", ""} {
+		client := &http.Client{Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
+			var body struct {
+				Model     string                     `json:"model"`
+				Questions map[string]json.RawMessage `json:"questions"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Model != "jev-latest" {
+				t.Fatalf("requested %q, want the alias", body.Model)
+			}
+			answers := map[string]any{}
+			for name := range body.Questions {
+				answers[name] = map[string]float64{"noul": .5}
+			}
+			raw, _ := json.Marshal(map[string]any{"model": resolved, "answers": answers})
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(raw)))}, nil
+		})}
+		evidence, err := scoreHeatmap(client, "https://example.invalid", "fixture", audit, paths, "Classify health", "Deploy a payment gateway")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if evidence.RequestedModel != "jev-latest" || evidence.Model != jevModel {
+			t.Fatalf("identities: requested %q, pinned %q", evidence.RequestedModel, evidence.Model)
+		}
+		for _, thread := range evidence.Threads {
+			accepted := thread.Error == ""
+			if accepted != (resolved == jevModel) {
+				t.Fatalf("resolved %q: accepted=%v (%s)", resolved, accepted, thread.Error)
+			}
+			if accepted && (thread.Response.Model != jevModel || !strings.Contains(string(thread.Response.Raw), `"model":"jev-1.14.0"`)) {
+				t.Fatalf("raw response not kept: %s", thread.Response.Raw)
+			}
+		}
+	}
+}

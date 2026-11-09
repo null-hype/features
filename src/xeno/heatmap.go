@@ -36,6 +36,7 @@ type heatmapThread struct {
 type heatmapEvidence struct {
 	Version         int             `json:"version"`
 	Model           string          `json:"model"`
+	RequestedModel  string          `json:"requestedModel"`
 	ObservedAt      string          `json:"observedAt"`
 	Audit           string          `json:"audit"`
 	AuditHash       string          `json:"auditHash"`
@@ -76,8 +77,9 @@ func heatmap(args []string) error {
 	negative := flags.String("negative", "", "reason expected to fit none of the selected threads")
 	audit := flags.String("reasons", "", "retained Pass monitor JSON; otherwise refresh the signed-in agent")
 	output := flags.String("output", ".witness/run/evidence", "private output directory")
+	requestModel := flags.String("request-model", jevModel, "model name to request; every response must still resolve to "+jevModel)
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE...")
+		fmt.Fprintln(flags.Output(), "Usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] [--request-model NAME] TRACE...")
 		fmt.Fprintln(flags.Output(), "\nCompare Pass reasons against the selected completed threads: Claude JSONL, OpenRouter trace sink session files, or version 3 agent session files (as yoars runs keep).")
 		fmt.Fprintln(flags.Output(), "Requires a resolved TYPESAFE_API_KEY. Writes reason-heatmap.json; a report renders the matrix from it.\n\nOptions:")
 		flags.PrintDefaults()
@@ -89,6 +91,10 @@ func heatmap(args []string) error {
 		}
 		return err
 	}
+	if strings.TrimSpace(*requestModel) == "" {
+		return errors.New("--request-model must name a model")
+	}
+	jevRequestModel = *requestModel
 	if strings.TrimSpace(*positive) == "" || strings.TrimSpace(*negative) == "" || *positive == *negative || flags.NArg() == 0 {
 		return errors.New("usage: xeno heatmap --positive REASON --negative REASON [--reasons FILE] [--output DIR] TRACE...")
 	}
@@ -129,7 +135,7 @@ func heatmap(args []string) error {
 // Explicit traces select the session's threads. No matching or ownership is
 // inferred from a filename, workspace, reason score, or invented run identity.
 func scoreHeatmap(client *http.Client, endpoint, key, auditPath string, paths []string, positive, negative string) (heatmapEvidence, error) {
-	evidence := heatmapEvidence{Version: 1, Model: jevModel, ObservedAt: time.Now().UTC().Format(time.RFC3339)}
+	evidence := heatmapEvidence{Version: 1, Model: jevModel, RequestedModel: jevRequestModel, ObservedAt: time.Now().UTC().Format(time.RFC3339)}
 	if strings.TrimSpace(positive) == "" || strings.TrimSpace(negative) == "" || positive == negative || len(paths) == 0 {
 		return evidence, errors.New("heat map requires distinct positive/negative controls and at least one trace")
 	}

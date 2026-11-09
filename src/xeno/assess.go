@@ -21,6 +21,11 @@ import (
 
 const jevModel = "jev-1.14.0"
 
+// The model name sent in the request. It defaults to the pinned identity;
+// `heatmap --request-model` may ask for an alias such as jev-latest. Either
+// way the response must resolve to jevModel, or the call is rejected.
+var jevRequestModel = jevModel
+
 type reasonScore struct {
 	Reason   string  `json:"reason"`
 	Fits     float64 `json:"fits"`
@@ -30,7 +35,10 @@ type reasonScore struct {
 type jevResponse struct {
 	Model       string `json:"model"`
 	LongContext bool   `json:"longContext"`
-	Answers     map[string]struct {
+	// The response body exactly as received, so a resolved identity can be
+	// audited later. Never the request's credentials, which are a header.
+	Raw     json.RawMessage `json:"raw,omitempty"`
+	Answers map[string]struct {
 		Noul *float64 `json:"noul"`
 	} `json:"answers"`
 }
@@ -55,7 +63,7 @@ func scoreReasons(client *http.Client, endpoint, key string, state any, reasons 
 			},
 		}
 	}
-	request := map[string]any{"model": jevModel, "state": state, "questions": questions}
+	request := map[string]any{"model": jevRequestModel, "state": state, "questions": questions}
 	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, request, jevResponse{}, err
@@ -91,8 +99,15 @@ func scoreReasons(client *http.Client, endpoint, key string, state any, reasons 
 			}
 			return nil, request, jevResponse{LongContext: longContext}, errors.New(message)
 		}
-		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&answer)
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 		resp.Body.Close()
+		decodeErr := readErr
+		if decodeErr == nil {
+			decodeErr = json.Unmarshal(raw, &answer)
+		}
+		if decodeErr == nil {
+			answer.Raw = raw
+		}
 		// Local transport provenance, never trusted from a response field.
 		answer.LongContext = longContext
 		if decodeErr != nil || answer.Model != jevModel {
