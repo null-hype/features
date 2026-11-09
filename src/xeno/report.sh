@@ -10,7 +10,7 @@
 #
 # A light is hollow until its arm reports. The status names the run:
 #   uncontrolled  an arm has not reported
-#   unverified    both reported, Jev missing or below 0.7
+#   unverified    both reported, Jev missing or below 0.8 (P-CIT-10 protocol/scoring.pkl, jevCutoff)
 #   confirmed     on target, verifier confirmed, falsifier failed
 #   refuted       on target, falsifier refuted (a success, not bad news)
 #   inconclusive  on target, neither arm got its way
@@ -91,7 +91,7 @@ esac
 printf '%s\n' "claim=$claim" "verifier=$verifier" "verifier_evidence=$verifier_evidence" \
     "falsifier=$falsifier" "falsifier_evidence=$falsifier_evidence" "jev=$jev" "reason_run=$reason_run" >"$file"
 
-genuine() { [[ -n $jev ]] && awk -v j="$jev" 'BEGIN { exit !(j >= 0.7) }'; }
+genuine() { [[ -n $jev ]] && awk -v j="$jev" 'BEGIN { exit !(j >= 0.8) }'; }
 
 if [[ -z $verifier || -z $falsifier ]]; then status=uncontrolled
 elif ! genuine; then status=unverified
