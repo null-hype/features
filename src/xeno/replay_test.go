@@ -14,7 +14,15 @@ import (
 // controls for that pane.
 func TestReplayResumesAnAgentPerSession(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	// t.Chdir needs Go 1.24; go.mod says 1.22.
+	start, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(start) })
 	audit := filepath.Join(dir, "reasons.json")
 	os.WriteFile(audit, []byte(`[{"action":"ItemRead","payload":{"reason":"parse"}}]`), 0600)
 	threads := []string{writeAgentSession(t, dir, "session-auth.jsonl", "a"), writeAgentSession(t, dir, "session-ui.jsonl", "b")}
