@@ -1,0 +1,22 @@
+# xeno's lights on Herdr's agent rows. Herdr draws a $token only where a row
+# asks for it, so append this to ~/.config/herdr/config.toml (once) and run
+# `herdr server reload-config`. Lights are in a window's traffic-light order.
+[ui.sidebar.agents]
+rows = [
+  ["state_icon", "machine", "workspace", "tab"],
+  [
+    "agent",
+    { token = "$xeno_falsifier", fg = "#ff5f57" },
+    { token = "$xeno_jev", fg = "#febc2e" },
+    { token = "$xeno_verifier", fg = "#28c840" },
+    { token = "$xeno_status", dim = true, rules = [
+      { equals = "uncontrolled", fg = "#febc2e", dim = false },
+      { equals = "unverified", fg = "#ff5f57", bold = true, dim = false },
+    ] },
+    { token = "$xeno_reason", dim = true, rules = [
+      { equals = "unfulfilled", fg = "#febc2e", dim = false },
+      { equals = "unmatched", fg = "#febc2e", dim = false },
+      { equals = "unverified", fg = "#ff5f57", bold = true, dim = false },
+    ] },
+  ],
+]

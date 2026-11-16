@@ -27,6 +27,175 @@ The `version` option selects a Witness tag, branch, or full commit SHA
 (default: `v0.1.0`). See the [manifest](src/witness/devcontainer-feature.json)
 and [installer](src/witness/install.sh).
 
+## Xeno
+
+Xeno saves Proton Pass agent audit records to `~/.xeno/reasons.json`. The
+records explain why access was requested and can be used as evidence alongside
+a check result.
+
+Add the Xeno feature to your Dev Container and pass a Proton Pass personal
+access token through `remoteEnv`. Set the token in the environment that
+launches Dev Containers.
+
+```json
+{
+  "remoteEnv": {
+    "PROTON_PASS_PERSONAL_ACCESS_TOKEN": "${localEnv:PROTON_PASS_PERSONAL_ACCESS_TOKEN}"
+  }
+}
+```
+
+The feature installs Herdr, Pass CLI, and the `xeno` command. At container
+startup Xeno signs in as the agent if needed and collects its audit records.
+The file may include item and vault names. It is readable only by its owner.
+
+Run `xeno refresh` or invoke **Refresh Xeno access evidence** in Herdr to
+fetch the latest records. A failed refresh preserves the last good file.
+
+For a standalone Herdr install, install Go, Bash, jq and Pass CLI first. The refresh
+action can use a PAT from Herdr's environment or an existing Pass user session.
+For a user session, set `XENO_PASS_AGENT` to the agent's name.
+
+### Assess a Claude thread
+
+Inside the thread's Herdr pane, with `TYPESAFE_API_KEY` resolved in the
+environment, run:
+
+```sh
+xeno assess /path/to/claude-session.jsonl
+```
+
+Xeno refreshes the Pass audit, takes its distinct `ItemRead` reasons, and asks
+Jev whether the trace fits each reason and whether its observed work achieved
+that reason. It uses the existing Noul request format and pinned
+`jev-1.14.0` model. Native Claude transcripts and CLI stream JSONL are supported.
+For streams that omit the prompt, set `XENO_PROMPT_FILE` to its text file.
+
+The pane's idle label and `$xeno_reason` sidebar token show `on-reason`,
+`unfulfilled`, `unmatched`, `uncertain`, or `unverified`. Scores at least 0.8
+support a judgment; scores at most 0.2 reject it; intermediate scores retain
+uncertainty. Multiple supported purposes can coexist. These are model
+judgments over the captured evidence, with no claim of causal attribution or
+release readiness.
+
+Witness reads the result from `.witness/run/findings.json`, or
+`$XENO_RUN_DIR/findings.json`. Its diagnostic lands on the Claude trace and
+links to the retained request, response, scores, and audit records under
+`evidence/reason-assessment.json`. A failed assessment publishes `unverified`
+and exits nonzero. Evidence files are written with owner-only access.
+
+The **Assess Claude thread against Pass reasons** Herdr action reassesses the
+last trace explicitly supplied in that pane, or `XENO_CLAUDE_TRACE` when set.
+Set the resolved TypeSafe key in Herdr's environment before starting its server
+to use that action. The saved pane binding retains the trace and findings paths.
+To assess after Claude finishes, add this command to a Claude `Stop` hook:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "xeno assess --hook" }] }]
+  }
+}
+```
+
+The hook reads Claude's native `transcript_path` and `last_assistant_message`
+from stdin: Claude can flush the final transcript event after the hook finishes.
+A missing final message produces `unverified`; assess the trace explicitly
+after Claude exits for versions without that field. Hook evidence retains the
+hash of the transcript read at that moment, but the diagnostic omits
+`sourceHash` because the live log keeps growing. Explicit trace assessments
+retain the hash check.
+
+The hook requires the same Pass and resolved TypeSafe environment as the
+manual command. Xeno does
+not edit existing Claude settings. Run `xeno clear` to remove its pane metadata
+and diagnostics.
+
+The existing `claim`, `verifier`, `falsifier`, and `jev` commands from the
+lights plugin are also included. Their control verdicts remain distinct from
+reason assessment. See [the lights configuration](src/xeno/NOTES.md).
+
+### Replay recorded threads in Herdr
+
+`xeno replay` opens a Herdr workspace with one pane per recorded session.
+Each pane resumes that session's agent (`herdr agent start --kind omp --
+--resume=<copy>` by default, or `--kind pi`; on a copy, so the recording is
+not appended to), so Herdr shows
+the agent and its history. Nothing is prompted, so no model is called. replay
+then assesses each thread and lights its pane:
+
+```sh
+TYPESAFE_API_KEY=pass://vault/item/field pass-cli run -- \
+  xeno replay --reasons reasons.json --label 'yoars run' \
+    --positive 'The shared task.' --negative 'Work nobody asked for.' session-*.jsonl
+```
+
+With `--positive` and `--negative`, each row reads like a heat map row: the
+positive control on the verifier (green), the negative control on the
+falsifier (red), and the thread's best fit to the reasons on jev (amber). A
+control in the uncertain band leaves its light hollow. `xeno assess` takes the
+same two options. Evidence goes to `.witness/run/<agent>` and the resumed
+copies to `.witness/replay/` under the directory replay was started from.
+
+### Compare reasons across a Herdr session
+
+Select the session's completed native Claude JSONL traces and compare them
+with the existing Xeno runner. OpenRouter trace sink session files and the
+version 3 agent session files that yoars runs keep (`session-<agent>.jsonl`)
+are read as threads too. Wait until Claude exits so the native logs
+include the final responses. Supply a resolved `TYPESAFE_API_KEY` as for
+`assess`.
+
+```sh
+xeno heatmap \
+  --positive 'Finish the professional homepage for Richard Anthony.' \
+  --negative 'Deploy a production Kubernetes cluster.' \
+  --output .witness/run/evidence \
+  /path/to/author-thread.jsonl \
+  /path/to/verifier-thread.jsonl \
+  /path/to/falsifier-thread.jsonl
+```
+
+The command refreshes the signed-in Pass identity's audit by default. If
+the session uses distinct Pass agents, retain each agent's
+`pass-cli agent monitor --output json` export, combine their arrays, and
+add `--reasons session-reasons.json` before the trace arguments:
+
+```sh
+umask 077
+jq -s 'add' author-reasons.json verifier-reasons.json falsifier-reasons.json \
+  > session-reasons.json
+```
+
+The matrix is written to `reason-heatmap.json` in the output directory, for a
+report to render: rows are distinct `ItemRead` reasons plus the two marked
+control rows, columns are the traces you selected, and each cell holds the
+reason fit and the separate achievement score. The positive control expects
+at least one fit at or above 0.8. The negative control expects every fit at
+or below 0.2. Control results are `held`, `missed`, or `unverified`.
+
+It also retains requests, responses, input paths and hashes, and is private
+to its owner. An API failure retains
+available columns, marks unavailable cells `unverified`, and exits nonzero.
+Input errors fail before rendering; any existing output retains its earlier
+`observedAt` timestamp. Run `xeno heatmap --help` for the command options.
+
+Reason assessment is text-only. Native traces can include base64 screenshots
+inside tool results; the scoring projection replaces structured binary media
+with an explicit unevaluated reference, preserving its media type, encoded
+length and hash. Text, tool calls and text results remain intact. The original
+native trace and its evidence hash remain unchanged, so screenshots are
+available for human QA; a reason score does not establish what an image shows.
+
+For both `assess` and `heatmap`, a Jev `max_tokens_exceeded` HTTP 400 response
+triggers one retry of the identical full request with TypeSafe's documented
+long-context header. The retained `response.longContext` field records
+whether that retry was requested, including failed retries. Questions,
+trace content, model and thresholds stay the same. Other HTTP errors are
+not retried. TypeSafe documents a 262k-token budget in this mode, with
+slower evaluation and lower accuracy than the default context limits;
+see [Jev context limits](https://docs.typesafe.ai/models#long-context).
+
 ## Boundaries
 
 [worlds](https://github.com/null-hype/worlds) captures delivery evidence;

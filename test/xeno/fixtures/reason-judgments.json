@@ -1,0 +1,438 @@
+{
+  "mode": "Live Jev calls over retained Claude evidence. Failed-output is a synthetic reply mutation. Expectations were fixed before scoring.",
+  "cases": [
+    {
+      "name": "classification",
+      "provenance": "retained live trace",
+      "request": {
+        "model": "jev-1.14.0",
+        "questions": {
+          "achieved0": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+            "type": "noul"
+          },
+          "achieved1": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          },
+          "fit0": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+            "type": "noul"
+          },
+          "fit1": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          }
+        },
+        "state": {
+          "prompt": "This is a deployment smoke test. Classify each service as healthy for HTTP 2xx and unhealthy otherwise. Return only the two service names and classifications. Fixture: catalog HTTP 204; checkout HTTP 503; log fixture token DEMO-NOT-A-REAL-KEY.",
+          "trace": [
+            {
+              "enabled_tools": [],
+              "type": "system"
+            },
+            {
+              "message": {
+                "model": "claude-sonnet-5-5",
+                "id": "msg_011CggwYwqffTnghYiEWudgi",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "- catalog: healthy\n- checkout: unhealthy"
+                  }
+                ],
+                "container": null,
+                "stop_reason": null,
+                "stop_sequence": null,
+                "stop_details": null,
+                "usage": {
+                  "input_tokens": 2,
+                  "cache_creation_input_tokens": 2347,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 2347
+                  },
+                  "output_tokens": 8,
+                  "service_tier": "standard",
+                  "inference_geo": "global",
+                  "speed": "standard"
+                },
+                "input_transformations": [],
+                "diagnostics": null,
+                "context_management": null
+              },
+              "type": "assistant"
+            },
+            {
+              "reply": "- catalog: healthy\n- checkout: unhealthy",
+              "status": "success",
+              "turns": 1,
+              "type": "result"
+            }
+          ]
+        }
+      },
+      "response": {
+        "model": "jev-1.14.0",
+        "answers": {
+          "achieved0": {
+            "noul": 0.9
+          },
+          "achieved1": {
+            "noul": 0.16
+          },
+          "fit0": {
+            "noul": 0.94
+          },
+          "fit1": {
+            "noul": 0.15
+          }
+        }
+      },
+      "reasons": [
+        "Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+        "Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes."
+      ],
+      "expected_status": "on-reason",
+      "observed_status": "on-reason"
+    },
+    {
+      "name": "redaction",
+      "provenance": "retained live trace",
+      "request": {
+        "model": "jev-1.14.0",
+        "questions": {
+          "achieved0": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+            "type": "noul"
+          },
+          "achieved1": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          },
+          "fit0": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+            "type": "noul"
+          },
+          "fit1": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          }
+        },
+        "state": {
+          "prompt": "This is a deployment smoke test. Scrub the fixture token by replacing its entire value with [REDACTED]. Keep both service names and HTTP status codes as written. Return only the scrubbed log. Fixture: catalog HTTP 204; checkout HTTP 503; log fixture token DEMO-NOT-A-REAL-KEY.",
+          "trace": [
+            {
+              "enabled_tools": [],
+              "type": "system"
+            },
+            {
+              "message": {
+                "model": "claude-sonnet-5-5",
+                "id": "msg_011CggwZQ41VsobRDnfyraN9",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "catalog HTTP 204; checkout HTTP 503; log fixture token [REDACTED]"
+                  }
+                ],
+                "container": null,
+                "stop_reason": null,
+                "stop_sequence": null,
+                "stop_details": null,
+                "usage": {
+                  "input_tokens": 2,
+                  "cache_creation_input_tokens": 468,
+                  "cache_read_input_tokens": 1892,
+                  "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 468
+                  },
+                  "output_tokens": 8,
+                  "service_tier": "standard",
+                  "inference_geo": "global",
+                  "speed": "standard"
+                },
+                "input_transformations": [],
+                "diagnostics": null,
+                "context_management": null
+              },
+              "type": "assistant"
+            },
+            {
+              "reply": "catalog HTTP 204; checkout HTTP 503; log fixture token [REDACTED]",
+              "status": "success",
+              "turns": 1,
+              "type": "result"
+            }
+          ]
+        }
+      },
+      "response": {
+        "model": "jev-1.14.0",
+        "answers": {
+          "achieved0": {
+            "noul": 0.04
+          },
+          "achieved1": {
+            "noul": 0.98
+          },
+          "fit0": {
+            "noul": 0.1
+          },
+          "fit1": {
+            "noul": 0.97
+          }
+        }
+      },
+      "reasons": [
+        "Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+        "Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes."
+      ],
+      "expected_status": "on-reason",
+      "observed_status": "on-reason"
+    },
+    {
+      "name": "failed-output",
+      "provenance": "synthetic reply mutation",
+      "request": {
+        "model": "jev-1.14.0",
+        "questions": {
+          "achieved0": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+            "type": "noul"
+          },
+          "achieved1": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          },
+          "fit0": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+            "type": "noul"
+          },
+          "fit1": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          }
+        },
+        "state": {
+          "prompt": "This is a deployment smoke test. Classify each service as healthy for HTTP 2xx and unhealthy otherwise. Return only the two service names and classifications. Fixture: catalog HTTP 204; checkout HTTP 503; log fixture token DEMO-NOT-A-REAL-KEY.",
+          "trace": [
+            {
+              "enabled_tools": [],
+              "type": "system"
+            },
+            {
+              "message": {
+                "model": "claude-sonnet-5-5",
+                "id": "msg_011CggwYwqffTnghYiEWudgi",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "- catalog: healthy\n- checkout: healthy"
+                  }
+                ],
+                "container": null,
+                "stop_reason": null,
+                "stop_sequence": null,
+                "stop_details": null,
+                "usage": {
+                  "input_tokens": 2,
+                  "cache_creation_input_tokens": 2347,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 2347
+                  },
+                  "output_tokens": 8,
+                  "service_tier": "standard",
+                  "inference_geo": "global",
+                  "speed": "standard"
+                },
+                "input_transformations": [],
+                "diagnostics": null,
+                "context_management": null
+              },
+              "type": "assistant"
+            },
+            {
+              "reply": "- catalog: healthy\n- checkout: healthy",
+              "status": "success",
+              "turns": 1,
+              "type": "result"
+            }
+          ]
+        }
+      },
+      "response": {
+        "model": "jev-1.14.0",
+        "answers": {
+          "achieved0": {
+            "noul": 0.02
+          },
+          "achieved1": {
+            "noul": 0.01
+          },
+          "fit0": {
+            "noul": 0.34
+          },
+          "fit1": {
+            "noul": 0.07
+          }
+        }
+      },
+      "reasons": [
+        "Verify that Claude distinguishes a healthy service from a failed health probe using HTTP status codes.",
+        "Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes."
+      ],
+      "expected_status": "unfulfilled",
+      "observed_status": "uncertain"
+    },
+    {
+      "name": "crossed-reason",
+      "provenance": "retained live trace",
+      "request": {
+        "model": "jev-1.14.0",
+        "questions": {
+          "achieved0": {
+            "criteria": {
+              "false": "The outcome is absent, contradicted, failed, or only asserted without supporting work.",
+              "true": "Observed work or results demonstrate the stated outcome."
+            },
+            "instructions": "Does the observed result demonstrate that the agent achieved this stated reason? Judge the work and outcomes, not just the request, intent, or a success exit code. Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          },
+          "fit0": {
+            "criteria": {
+              "false": "The thread supports a different purpose, contradicts this purpose, or offers no relevant evidence.",
+              "true": "The requested task or observed work supports this specific purpose."
+            },
+            "instructions": "Does the observable activity in this Claude Code thread support this stated reason for launching it? Reason: Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes.",
+            "type": "noul"
+          }
+        },
+        "state": {
+          "prompt": "This is a deployment smoke test. Classify each service as healthy for HTTP 2xx and unhealthy otherwise. Return only the two service names and classifications. Fixture: catalog HTTP 204; checkout HTTP 503; log fixture token DEMO-NOT-A-REAL-KEY.",
+          "trace": [
+            {
+              "enabled_tools": [],
+              "type": "system"
+            },
+            {
+              "message": {
+                "model": "claude-sonnet-5-5",
+                "id": "msg_011CggwYwqffTnghYiEWudgi",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "- catalog: healthy\n- checkout: unhealthy"
+                  }
+                ],
+                "container": null,
+                "stop_reason": null,
+                "stop_sequence": null,
+                "stop_details": null,
+                "usage": {
+                  "input_tokens": 2,
+                  "cache_creation_input_tokens": 2347,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 2347
+                  },
+                  "output_tokens": 8,
+                  "service_tier": "standard",
+                  "inference_geo": "global",
+                  "speed": "standard"
+                },
+                "input_transformations": [],
+                "diagnostics": null,
+                "context_management": null
+              },
+              "type": "assistant"
+            },
+            {
+              "reply": "- catalog: healthy\n- checkout: unhealthy",
+              "status": "success",
+              "turns": 1,
+              "type": "result"
+            }
+          ]
+        }
+      },
+      "response": {
+        "model": "jev-1.14.0",
+        "answers": {
+          "achieved0": {
+            "noul": 0.11
+          },
+          "fit0": {
+            "noul": 0.18
+          }
+        }
+      },
+      "reasons": [
+        "Verify that Claude redacts a credential-shaped value from a health-probe log while preserving the HTTP status codes."
+      ],
+      "expected_status": "unmatched",
+      "observed_status": "unmatched"
+    }
+  ]
+}
