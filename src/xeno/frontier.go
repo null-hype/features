@@ -1,0 +1,172 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+const linearEndpoint = "https://api.linear.app/graphql"
+
+// Blockers are the issues on the other end of "blocks" relations that point
+// at this issue, wherever those issues live.
+// Linear prices a query by its page sizes multiplied together; one page of 50
+// issues with 10 relations each fits one project and stays under the limit.
+const projectQuery = `query($id: String!) {
+  project(id: $id) {
+    issues(first: 50) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        identifier title description
+        state { type }
+        inverseRelations(first: 10) {
+          nodes { type issue { identifier state { type } } }
+        }
+      }
+    }
+  }
+}`
+
+type linearState struct {
+	Type string `json:"type"`
+}
+
+type linearRef struct {
+	Identifier string      `json:"identifier"`
+	State      linearState `json:"state"`
+}
+
+type linearRelation struct {
+	Type  string    `json:"type"`
+	Issue linearRef `json:"issue"`
+}
+
+type linearIssue struct {
+	Identifier       string      `json:"identifier"`
+	Title            string      `json:"title"`
+	Description      string      `json:"description"`
+	State            linearState `json:"state"`
+	InverseRelations struct {
+		Nodes []linearRelation `json:"nodes"`
+	} `json:"inverseRelations"`
+}
+
+type linearPageInfo struct {
+	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   string `json:"endCursor"`
+}
+
+type linearProject struct {
+	Issues struct {
+		PageInfo linearPageInfo `json:"pageInfo"`
+		Nodes    []linearIssue  `json:"nodes"`
+	} `json:"issues"`
+}
+
+type linearResponse struct {
+	Data struct {
+		Project *linearProject `json:"project"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func fetchProject(client *http.Client, endpoint, key, project string) ([]linearIssue, error) {
+	body, err := json.Marshal(map[string]any{"query": projectQuery, "variables": map[string]string{"id": project}})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Personal API keys go bare; OAuth access tokens need a Bearer prefix.
+	key = strings.TrimSpace(key)
+	if strings.HasPrefix(key, "lin_oauth_") {
+		key = "Bearer " + key
+	}
+	req.Header.Set("Authorization", key)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var out linearResponse
+	parseErr := json.Unmarshal(raw, &out)
+	if parseErr == nil && len(out.Errors) > 0 {
+		return nil, fmt.Errorf("Linear (HTTP %d): %s", resp.StatusCode, out.Errors[0].Message)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Linear returned HTTP %d", resp.StatusCode)
+	}
+	if parseErr != nil {
+		return nil, errors.New("Linear response is not GraphQL JSON")
+	}
+	if out.Data.Project == nil {
+		return nil, fmt.Errorf("Linear project %q not found", project)
+	}
+	if out.Data.Project.Issues.PageInfo.HasNextPage {
+		return nil, fmt.Errorf("Linear project %q has more than 50 issues", project)
+	}
+	return out.Data.Project.Issues.Nodes, nil
+}
+
+// The frontier is every issue nobody has started whose blockers are all
+// completed. A canceled blocker still blocks: nothing it promised exists.
+func frontier(issues []linearIssue) []linearIssue {
+	var ready []linearIssue
+	for _, issue := range issues {
+		switch issue.State.Type {
+		case "triage", "backlog", "unstarted":
+		default:
+			continue
+		}
+		blocked := false
+		for _, rel := range issue.InverseRelations.Nodes {
+			if rel.Type == "blocks" && rel.Issue.State.Type != "completed" {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			ready = append(ready, issue)
+		}
+	}
+	return ready
+}
+
+func frontierCommand(args []string) error {
+	flags := flag.NewFlagSet("frontier", flag.ContinueOnError)
+	project := flags.String("project", os.Getenv("XENO_LINEAR_PROJECT"), "Linear project ID, identifier or slug")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *project == "" || flags.NArg() != 0 {
+		return errors.New("usage: xeno frontier --project PROJECT")
+	}
+	key := os.Getenv("LINEAR_API_KEY")
+	if key == "" {
+		return errors.New("LINEAR_API_KEY is not set")
+	}
+	issues, err := fetchProject(&http.Client{Timeout: 30 * time.Second}, linearEndpoint, key, *project)
+	if err != nil {
+		return err
+	}
+	for _, issue := range frontier(issues) {
+		fmt.Printf("%s\t%s\n", issue.Identifier, issue.Title)
+	}
+	return nil
+}

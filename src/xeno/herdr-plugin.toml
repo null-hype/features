@@ -27,3 +27,4 @@ id = "clear"
 title = "Clear Xeno lights and reason assessment"
 contexts = ["pane"]
 command = ["./xeno", "clear"]
+
