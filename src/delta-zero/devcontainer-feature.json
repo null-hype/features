@@ -1,0 +1,15 @@
+{
+    "name": "delta-zero",
+    "id": "delta-zero",
+    "version": "0.1.0",
+    "description": "Installs what the delta-zero Agent Plugin needs on the host: Python 3 and Pkl.",
+    "documentationURL": "https://github.com/null-hype/agent-plugins",
+    "options": {
+        "pklVersion": {
+            "type": "string",
+            "default": "0.28.2",
+            "proposals": ["0.28.2"],
+            "description": "Pkl release to install. Only versions with a pinned checksum in install.sh are supported."
+        }
+    }
+}
