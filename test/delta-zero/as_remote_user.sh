@@ -4,7 +4,7 @@ set -e
 source dev-container-features-test-lib
 
 # The delta-zero plugin at a pinned commit; its deploy-approval example is the input.
-PLUGIN_COMMIT=72737e09012ccbb48e4a8d7cf413706492e8eb31
+PLUGIN_COMMIT=39e328c5206642c1de53bca42f7014b93c9a3602
 src="$(mktemp -d)"
 out="$(mktemp -d)"
 git -C "$src" init -q
