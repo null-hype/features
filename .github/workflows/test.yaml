@@ -34,10 +34,11 @@ jobs:
             shared:
               - '.github/workflows/test.yaml'
             witness: ['src/witness/**', 'test/witness/**']
+            delta-zero: ['src/delta-zero/**', 'test/delta-zero/**']
             xeno: ['src/xeno/**', 'test/xeno/**']
       - id: set
         run: |
-          all='["witness","xeno"]'
+          all='["witness","xeno","delta-zero"]'
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             features=$all
           else
